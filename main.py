@@ -1,15 +1,44 @@
 import asyncio
-
 from fastapi import FastAPI
-from services.otp_cleanup import cleanup_otps
+from services.Auth.otp_cleanup import cleanup_otps
 from core.database import Base
 from core.database import engine, SessionLocal
 from core.seed import create_default_super_admin
-from core.config import  SUPER_ADMIN_MOBILE, SUPER_ADMIN_PASSWORD,SUPER_ADMIN_NAME,SUPER_ADMIN_DEVICE_ID
-from routers import user_register
-from routers import lender
-from routers import superadmin_access
-from routers import login_SL
+from core.config import settings
+from routers.Auth import lender
+from routers.Auth import superadmin_access
+from routers.Auth import login_SL
+from routers.Auth import user_register
+from routers.Eligibility.credit_route import router as credit_router
+from routers.Eligibility.eligibility_route import router as eligibility_router
+from routers.Eligibility.eligibility_result import router as eligibility_result_router
+from routers.Eligibility.loan_calculator_route import router as loan_calculator_router
+from routers.Eligibility.loan_calculator_result import router as loan_router
+from routers.Loan_application.loan_eligibility_router import router as loan_eligibility_router
+from routers.Loan_application.loan_application_router import router as loan_application_router
+from routers.Loan_application.loan_application_purpose_router import router as loan_application_purpose_router
+from routers.Loan_application.loan_application_reference_router import router as loan_application_reference_router
+from routers.Loan_application.reference_otp_router import router as reference_otp_router
+from routers.Loan_application.loan_application_summary_router import router as loan_application_summary_router
+from routers.Loan_application.loan_application_declaration_router import router as loan_application_declaration_router
+from routers.Loan_application.lender_router import router as lender_router
+from routers.Loan_application.loan_disbursement_router import router as loan_disbursement_router
+from routers.Profile_KYC.profile_router import router as profile_router
+from routers.Profile_KYC.pan_router import router as pan_router
+from routers.Profile_KYC.aadhaar_router import router as aadhaar_router
+from routers.Profile_KYC.bank_router import router as bank_router
+from routers.Profile_KYC.document_router import router as document_router
+from routers.Profile_KYC.admin_router import router as admin_router
+from services.Profile_KYC.auto_cleanup import AutoCleanup
+from routers.Consent.consent_routers import router as consent_router
+from routers.Consent.legal_routers import router as legal_router
+from routers.Tracking.tracking_router import router as tracking_router
+from routers.Tracking.reupload_router import router as reupload_router
+from routers.Tracking.status_update_router import router as status_update_router
+from routers.Tracking.nbfc_webhook_router import router as nbfc_router
+from routers.Tracking.notifications_router import router as notifications_router
+
+
 
 
 
@@ -23,25 +52,68 @@ app = FastAPI(title="Loan Service Platform - OTP and Session Auth API")
 def startup():
     db = SessionLocal()
     try:
-        if SUPER_ADMIN_MOBILE and SUPER_ADMIN_PASSWORD:
+        if settings.SUPER_ADMIN_MOBILE and settings.SUPER_ADMIN_PASSWORD:
             create_default_super_admin(
                 db,
-                SUPER_ADMIN_NAME,
-                SUPER_ADMIN_MOBILE,
-                SUPER_ADMIN_PASSWORD,
-                SUPER_ADMIN_DEVICE_ID,
+                settings.SUPER_ADMIN_NAME,
+                settings.SUPER_ADMIN_MOBILE,
+                settings.SUPER_ADMIN_PASSWORD,
+                settings.SUPER_ADMIN_DEVICE_ID,
               
             )
     finally:
         db.close()
 
-@app.get("/",tags=["start"])
-def read_root():
-    return {"message": "Welcome to the OTP + Session Auth API"}
+
+#Auth Routers
+
+app.include_router(login_SL.router)
 app.include_router(user_register.router)
 app.include_router(lender.router)
-app.include_router(login_SL.router)
 app.include_router(superadmin_access.router)
+
+app.include_router(profile_router)
+app.include_router(pan_router)
+app.include_router(aadhaar_router)
+app.include_router(bank_router)
+app.include_router(document_router)
+app.include_router(admin_router)
+
+
+app.include_router(consent_router)
+app.include_router(legal_router)
+
+
+app.include_router(credit_router,tags=["Credit Profile"])
+app.include_router(eligibility_router, tags=["Loan Eligibility"])
+app.include_router(eligibility_result_router, tags=["Loan Eligibility"])
+app.include_router(loan_calculator_router,  tags=["Loan Calculator"])
+app.include_router(loan_router,tags=["Loan Calculator"])
+
+#Loan Application Routers
+# app.include_router(loan_eligibility_router)
+
+app.include_router(loan_application_router)
+app.include_router(loan_application_purpose_router)
+app.include_router(loan_application_reference_router)   
+app.include_router(reference_otp_router)
+app.include_router(loan_application_declaration_router)
+# app.include_router(loan_application_summary_router)
+app.include_router(lender_router)
+app.include_router(loan_disbursement_router)
+
+#Tracking Routers
+
+app.include_router(tracking_router)
+app.include_router(reupload_router)
+app.include_router(status_update_router)
+app.include_router(nbfc_router)
+app.include_router(notifications_router)
+
+
+
+
+
 
 async def otp_cleanup_loop():
     while True:

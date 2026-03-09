@@ -369,4 +369,4 @@ Refresh Token expiry: 30 days
  
 Existing users are authenticated → session created,
 new users are redirected to signup before authentication
- 
+ # LSP
