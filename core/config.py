@@ -1,5 +1,3 @@
-# core/config.py
-
 from functools import lru_cache
 from pathlib import Path
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -36,6 +34,20 @@ class Settings(BaseSettings):
     # Database
     # ============================================================
     DATABASE_URL: str
+
+    # ============================================================
+    # Redis (OTP storage)
+    # ============================================================
+    REDIS_HOST: str = "localhost"
+    REDIS_PORT: int = 6379
+    REDIS_PASSWORD: Optional[str] = None
+
+    # ============================================================
+    # Twilio SMS Configuration
+    # ============================================================
+    TWILIO_ACCOUNT_SID: str
+    TWILIO_AUTH_TOKEN: str
+    TWILIO_PHONE_NUMBER: str
 
     # ============================================================
     # Verification Mode
