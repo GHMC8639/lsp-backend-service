@@ -1,5 +1,12 @@
 import asyncio
 from fastapi import FastAPI
+from models.Support import chat, complaint, grievance
+from routers.Support import chat, complaint, contact, faq, grievance
+from routers.Support.faq import router as faq_router
+from routers.Support.chat import router as chat_router
+from routers.Support.complaint import router as complaint_router
+from routers.Support.contact import router as contact_router
+from routers.Support.grievance import router as grievance_router
 from services.Auth.otp_cleanup import cleanup_otps
 from core.database import Base
 from core.database import engine, SessionLocal
@@ -40,10 +47,6 @@ from routers.Tracking.notifications_router import router as notifications_router
 
 
 
-
-
-
-
 Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="Loan Service Platform - OTP and Session Auth API")
@@ -72,6 +75,7 @@ app.include_router(user_register.router)
 app.include_router(lender.router)
 app.include_router(superadmin_access.router)
 
+#Profile and KYC Routers
 app.include_router(profile_router)
 app.include_router(pan_router)
 app.include_router(aadhaar_router)
@@ -79,11 +83,11 @@ app.include_router(bank_router)
 app.include_router(document_router)
 app.include_router(admin_router)
 
-
+# Consent and Legal Routers
 app.include_router(consent_router)
 app.include_router(legal_router)
 
-
+# Eligibility and Credit Profile Routers
 app.include_router(credit_router,tags=["Credit Profile"])
 app.include_router(eligibility_router, tags=["Loan Eligibility"])
 app.include_router(eligibility_result_router, tags=["Loan Eligibility"])
@@ -98,12 +102,12 @@ app.include_router(loan_application_purpose_router)
 app.include_router(loan_application_reference_router)   
 app.include_router(reference_otp_router)
 app.include_router(loan_application_declaration_router)
+
 # app.include_router(loan_application_summary_router)
 app.include_router(lender_router)
 app.include_router(loan_disbursement_router)
 
 #Tracking Routers
-
 app.include_router(tracking_router)
 app.include_router(reupload_router)
 app.include_router(status_update_router)
@@ -112,9 +116,14 @@ app.include_router(notifications_router)
 
 
 
+#Support Routers
+app.include_router(faq_router)
+app.include_router(chat_router)
+app.include_router(complaint_router)
+app.include_router(contact_router)
+app.include_router(grievance_router)
 
-
-
+# OTP Cleanup Task
 async def otp_cleanup_loop():
     while True:
         db = SessionLocal()

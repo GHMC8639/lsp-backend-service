@@ -11,3 +11,13 @@ def map_failure_reason(reason: str, status: str) -> str:
     }
 
     return mapping.get(reason, "You are not eligible at this time.")
+
+
+
+
+
+
+
+
+
+
