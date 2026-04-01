@@ -1,6 +1,8 @@
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
+from models.Auth.lender import Lender
+from models.Auth.lender import Lender
 from models.Loan_application.loan_application import LoanApplication
 from core.enums import LoanApplicationStatus
 from services.Loan_application.loan_calculator import calculate_loan_summary
@@ -50,9 +52,12 @@ class PreDisbursementService:
             )
         except ValueError as e:
             raise HTTPException(400, str(e))
-
+        lender = db.query(Lender).filter(
+            Lender.id == application.lender_id 
+        ).first()
         return {
             "application_id": application.id,
+            "lender_name": lender.name if lender else None,
             "approved_amount": loan_calc["approved_amount"],
             "tenure_months": loan_calc["tenure_months"],
             "interest_rate_percent": loan_calc["interest_rate"],

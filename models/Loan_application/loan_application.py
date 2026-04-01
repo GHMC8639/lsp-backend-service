@@ -53,7 +53,7 @@ class LoanApplication(Base):
     total_repayment = Column(Numeric(14, 2), nullable=True)
 
     current_step = Column(String(50), nullable=False, default="OPENED")
-
+    payout_status= Column(String(20), nullable=False, default="PENDING")
     application_status = Column(
         Enum(LoanApplicationStatus, name="loan_application_status_enum"),
         default=LoanApplicationStatus.DRAFT,

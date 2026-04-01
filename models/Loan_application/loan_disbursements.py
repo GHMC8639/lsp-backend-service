@@ -28,7 +28,8 @@ class LoanDisbursement(Base):
 
     initiated_at = Column(DateTime, server_default=func.now())
     completed_at = Column(DateTime, nullable=True)
-
+    retry_count = Column(Integer, default=0)
+    last_retry_at = Column(DateTime, nullable=True)
     application = relationship(
         "LoanApplication",
         back_populates="disbursements")
