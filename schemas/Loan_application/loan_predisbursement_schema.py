@@ -6,7 +6,7 @@ from datetime import datetime
 class PreDisbursementResponseSchema(BaseModel):
 
     application_id: int
-
+    lender_name: str
     approved_amount: Decimal = Field(
         ...,
         description="Approved loan amount")
