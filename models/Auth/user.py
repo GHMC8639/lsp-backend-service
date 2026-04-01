@@ -11,7 +11,7 @@ class User(Base):
     mobile_number = Column(String(25), unique=True)
     password_hash = Column(String)
     device_id = Column(Text,nullable=True)
-    mail = Column(String, unique=True, index=True, nullable=False)
+    mail = Column(String, unique=True, index=True, nullable=True)
     status = Column(String, default="active")
     role = Column(String,default="USER")
 

@@ -1,12 +1,18 @@
 import asyncio
 from fastapi import FastAPI
 from models.Support import chat, complaint, grievance
+from models.Esign import agreements, esign_session, signed_documents, audit_logs
 from routers.Support import chat, complaint, contact, faq, grievance
 from routers.Support.faq import router as faq_router
 from routers.Support.chat import router as chat_router
 from routers.Support.complaint import router as complaint_router
 from routers.Support.contact import router as contact_router
 from routers.Support.grievance import router as grievance_router
+
+from routers.Esign.esign_router import router as esign_router
+from routers.Esign.agreement_router import router as agreement_router
+from routers.Esign.disbursement_router import router as disbursement_router
+
 from services.Auth.otp_cleanup import cleanup_otps
 from core.database import Base
 from core.database import engine, SessionLocal
@@ -122,6 +128,11 @@ app.include_router(chat_router)
 app.include_router(complaint_router)
 app.include_router(contact_router)
 app.include_router(grievance_router)
+
+#Esign Routers
+app.include_router(agreement_router)
+app.include_router(esign_router)
+app.include_router(disbursement_router)
 
 # OTP Cleanup Task
 async def otp_cleanup_loop():

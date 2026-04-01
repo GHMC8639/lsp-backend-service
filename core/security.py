@@ -58,11 +58,21 @@ def validate_mobile(mobile_number: str):
     if not mobile_number:
         raise HTTPException(status_code=400, detail="Mobile number required")
 
-    if not re.fullmatch(r"^(\+91)?[6-9]\d{9}$", mobile_number):
+    # Remove all spaces
+    mobile_number = mobile_number.strip().replace(" ", "")
+
+    # Normalize to +91
+    if re.fullmatch(r"[6-9]\d{9}", mobile_number):
+        mobile_number = "+91" + mobile_number
+
+    # Final validation
+    if not re.fullmatch(r"^\+91[6-9]\d{9}$", mobile_number):
         raise HTTPException(
             status_code=400,
-            detail="Mobile number must be a valid 10-digit Indian number",
+            detail="Invalid Indian mobile number",
         )
+
+    return mobile_number
 
 
 def validate_password_length(password: str):

@@ -123,6 +123,18 @@ class Settings(BaseSettings):
     HYPERVERGE_APP_ID: Optional[str] = None
     HYPERVERGE_APP_KEY: Optional[str] = None
     HYPERVERGE_API_URL: str = "https://ind-docs.hyperverge.co/v2.0/readKYC"
+    
+    # ---- ESIGN ----
+    ENV: str = "DEV"
+    AGREEMENT_STORAGE_PATH: str = "storage/generated_pdfs"
+    SIGNED_PDF_PATH: str = "storage/signed_pdfs"
+    ESIGN_PROVIDER: str = "eMudhra"
+    ESIGN_BASE_URL: str = ""
+    ESIGN_API_KEY: str = ""
+    ESIGN_CLIENT_SECRET: str = ""
+    LOAN_SERVICE_BASE_URL: str = "LOAN_SERVICE_BASE_URL=http://localhost:8000/api/v1/loans"
+    ESIGN_CALLBACK_SECRET: str = ""
+    CALLBACK_URL: str = ""
 
     # ============================================================
     # Computed Fields

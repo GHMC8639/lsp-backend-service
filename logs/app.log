@@ -1,0 +1,101 @@
+2026-03-25 17:30:02,891 | INFO | E-Sign | [Agreement] Fetching agreement for loan_id=1
+2026-03-25 17:30:42,824 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-25 17:30:42,825 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-25 17:34:42,066 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-25 17:34:42,066 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-25 17:36:08,694 | INFO | E-Sign | E-Sign verify request for txn=5f19651957264433b4b46b2857b56510
+2026-03-25 17:36:08,694 | INFO | E-Sign | [E-SIGN VERIFY] txn=5f19651957264433b4b46b2857b56510
+2026-03-25 17:37:25,422 | INFO | E-Sign | E-Sign callback received for txn=5f19651957264433b4b46b2857b56510
+2026-03-25 17:37:25,422 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-25 17:37:25,422 | INFO | E-Sign | [CALLBACK] txn=5f19651957264433b4b46b2857b56510
+2026-03-25 17:37:25,431 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-25 17:37:31,002 | INFO | E-Sign | [Agreement] Fetching agreement for loan_id=1
+2026-03-25 17:37:48,300 | INFO | E-Sign | [Agreement] Verifying hash for loan_id=1
+2026-03-25 17:52:13,586 | INFO | E-Sign | [Agreement] Fetching agreement for loan_id=1
+2026-03-25 17:52:21,550 | INFO | E-Sign | [Agreement] Fetching agreement for loan_id=1
+2026-03-27 18:05:40,739 | INFO | E-Sign | [DISBURSEMENT] Fetching status for loan_id=1
+2026-03-30 09:12:21,805 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 09:12:21,805 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 09:33:23,614 | INFO | E-Sign | [Agreement] Fetching agreement for loan_id=1
+2026-03-30 09:33:34,947 | INFO | E-Sign | [Agreement] Verifying hash for loan_id=1
+2026-03-30 09:33:50,921 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 09:33:50,921 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 09:40:47,020 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 09:40:47,021 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 09:41:14,786 | INFO | E-Sign | E-Sign verify request for txn=d9bab41c4c42404ebafa8692a0c973b9
+2026-03-30 09:41:14,786 | INFO | E-Sign | [E-SIGN VERIFY] txn=d9bab41c4c42404ebafa8692a0c973b9
+2026-03-30 09:42:04,396 | INFO | E-Sign | E-Sign verify request for txn=d9bab41c4c42404ebafa8692a0c973b9
+2026-03-30 09:42:04,396 | INFO | E-Sign | [E-SIGN VERIFY] txn=d9bab41c4c42404ebafa8692a0c973b9
+2026-03-30 09:42:30,468 | INFO | E-Sign | E-Sign callback received for txn=d9bab41c4c42404ebafa8692a0c973b9
+2026-03-30 09:42:30,468 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 09:42:30,468 | INFO | E-Sign | [CALLBACK] txn=d9bab41c4c42404ebafa8692a0c973b9
+2026-03-30 09:42:30,474 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-30 09:42:49,482 | INFO | E-Sign | [DISBURSEMENT] Fetching status for loan_id=1
+2026-03-30 09:42:57,473 | INFO | E-Sign | [DISBURSEMENT] Confirming disbursement for loan_id=1
+2026-03-30 10:05:43,976 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 10:05:43,976 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 10:06:14,289 | INFO | E-Sign | E-Sign verify request for txn=938f80010a1a449f87148f1f8edc6426
+2026-03-30 10:06:14,289 | INFO | E-Sign | [E-SIGN VERIFY] txn=938f80010a1a449f87148f1f8edc6426
+2026-03-30 10:06:26,584 | INFO | E-Sign | E-Sign callback received for txn=938f80010a1a449f87148f1f8edc6426
+2026-03-30 10:06:26,584 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 10:06:26,587 | INFO | E-Sign | [CALLBACK] txn=938f80010a1a449f87148f1f8edc6426
+2026-03-30 10:06:26,589 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-30 10:10:26,681 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 10:10:26,682 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 10:10:51,741 | INFO | E-Sign | E-Sign verify request for txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:10:51,742 | INFO | E-Sign | [E-SIGN VERIFY] txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:11:13,828 | INFO | E-Sign | E-Sign callback received for txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:11:13,828 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 10:11:13,828 | INFO | E-Sign | [CALLBACK] txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:11:13,828 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-30 10:14:36,469 | INFO | E-Sign | E-Sign verify request for txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:14:36,469 | INFO | E-Sign | [E-SIGN VERIFY] txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:16:36,130 | INFO | E-Sign | E-Sign verify request for txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:16:36,134 | INFO | E-Sign | [E-SIGN VERIFY] txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:19:31,055 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 10:19:31,055 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 10:19:36,080 | INFO | E-Sign | E-Sign verify request for txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:19:36,080 | INFO | E-Sign | [E-SIGN VERIFY] txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:19:40,627 | INFO | E-Sign | E-Sign callback received for txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:19:40,628 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 10:19:40,628 | INFO | E-Sign | [CALLBACK] txn=f3faba14f08243d49c7e7ed93169e2b4
+2026-03-30 10:19:40,630 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-30 10:46:52,955 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 10:46:52,957 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 10:47:24,446 | INFO | E-Sign | E-Sign verify request for txn=cb5d168c05ac41b6a3dc41c8844c47b2
+2026-03-30 10:47:24,446 | INFO | E-Sign | [E-SIGN VERIFY] txn=cb5d168c05ac41b6a3dc41c8844c47b2
+2026-03-30 10:47:44,690 | INFO | E-Sign | E-Sign callback received for txn=cb5d168c05ac41b6a3dc41c8844c47b2
+2026-03-30 10:47:44,690 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 10:47:44,690 | INFO | E-Sign | [CALLBACK] txn=cb5d168c05ac41b6a3dc41c8844c47b2
+2026-03-30 10:47:44,693 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-30 10:54:45,315 | INFO | E-Sign | E-Sign callback received for txn=cb5d168c05ac41b6a3dc41c8844c47b2
+2026-03-30 10:54:45,319 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 10:54:45,323 | INFO | E-Sign | [CALLBACK] txn=cb5d168c05ac41b6a3dc41c8844c47b2
+2026-03-30 10:54:45,331 | INFO | E-Sign | [CALLBACK] already processed
+2026-03-30 11:21:22,173 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 11:21:22,173 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 11:21:56,204 | INFO | E-Sign | E-Sign verify request for txn=38d90cad8bd5449d928f6a99221a96e5
+2026-03-30 11:21:56,204 | INFO | E-Sign | [E-SIGN VERIFY] txn=38d90cad8bd5449d928f6a99221a96e5
+2026-03-30 11:22:18,718 | INFO | E-Sign | E-Sign callback received for txn=38d90cad8bd5449d928f6a99221a96e5
+2026-03-30 11:22:18,718 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 11:22:18,718 | INFO | E-Sign | [CALLBACK] txn=38d90cad8bd5449d928f6a99221a96e5
+2026-03-30 11:22:18,720 | INFO | E-Sign | [FILE] Saving signed PDF -> storage\signed_pdfs\signed_38d90cad8bd5449d928f6a99221a96e5_20260330_055218.pdf
+2026-03-30 11:22:18,748 | INFO | E-Sign | [DISBURSEMENT] Confirming disbursement for loan_id=1
+2026-03-30 11:22:18,752 | INFO | E-Sign | [DISBURSEMENT] Triggered for loan_id=1
+2026-03-30 11:23:19,461 | INFO | E-Sign | [DISBURSEMENT] Fetching status for loan_id=1
+2026-03-30 11:23:30,070 | INFO | E-Sign | [DISBURSEMENT] Confirming disbursement for loan_id=1
+2026-03-30 12:11:37,001 | INFO | E-Sign | [DISBURSEMENT] Fetching status for loan_id=1
+2026-03-30 12:11:48,955 | INFO | E-Sign | [DISBURSEMENT] Confirming disbursement for loan_id=1
+2026-03-30 12:15:05,827 | INFO | E-Sign | [Agreement] Fetching agreement for loan_id=1
+2026-03-30 12:15:15,300 | INFO | E-Sign | E-Sign initiate request for loan_id=1
+2026-03-30 12:15:15,302 | INFO | E-Sign | [E-SIGN INIT] loan_id=1
+2026-03-30 12:15:34,377 | INFO | E-Sign | E-Sign verify request for txn=4c628cf1577f4c8fa659850161caebc7
+2026-03-30 12:15:34,377 | INFO | E-Sign | [E-SIGN VERIFY] txn=4c628cf1577f4c8fa659850161caebc7
+2026-03-30 12:15:48,461 | INFO | E-Sign | E-Sign callback received for txn=4c628cf1577f4c8fa659850161caebc7
+2026-03-30 12:15:48,461 | INFO | E-Sign | DEV mode: skipping signature validation
+2026-03-30 12:15:48,463 | INFO | E-Sign | [CALLBACK] txn=4c628cf1577f4c8fa659850161caebc7
+2026-03-30 12:15:48,466 | INFO | E-Sign | [FILE] Saving signed PDF -> storage\signed_pdfs\signed_4c628cf1577f4c8fa659850161caebc7_20260330_064548.pdf
+2026-03-30 12:15:48,498 | INFO | E-Sign | [DISBURSEMENT] Confirming disbursement for loan_id=1
+2026-03-30 12:15:48,498 | INFO | E-Sign | [DISBURSEMENT] Triggered for loan_id=1
+2026-03-30 12:15:53,089 | INFO | E-Sign | [DISBURSEMENT] Fetching status for loan_id=1
+2026-03-30 12:15:58,126 | INFO | E-Sign | [DISBURSEMENT] Confirming disbursement for loan_id=1

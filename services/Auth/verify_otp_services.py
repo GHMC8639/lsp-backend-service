@@ -27,8 +27,10 @@ def send_otp(mobile_number: str):
             status_code=status.HTTP_429_TOO_MANY_REQUESTS,
             detail="Blocked for 24 hours"
         )
-
+  
+    
     otp = _generate_otp()
+    print(f"OTP for {mobile_number}: {otp}")   ## Debug log, remove in production
 
     # Store OTP (hashed) in Redis
     redis_client.setex(
