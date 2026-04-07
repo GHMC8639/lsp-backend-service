@@ -1,8 +1,8 @@
 from enum import Enum
 
 
-class ApplicationStatus(str, Enum):
-    DRAFT = "DRAFT"
+class LoanStatus(str, Enum):
+
     SUBMITTED = "SUBMITTED"
     UNDER_REVIEW = "UNDER_REVIEW"
     VERIFICATION_PENDING = "VERIFICATION_PENDING"
@@ -15,3 +15,16 @@ class ApplicationStatus(str, Enum):
     DISBURSED = "DISBURSED"
     ACTIVE = "ACTIVE"
     CLOSED = "CLOSED"
+
+
+class NotificationType(str, Enum):
+
+    STATUS_UPDATE = "STATUS_UPDATE"
+    DOCUMENT = "DOCUMENT"
+    NBFC = "NBFC"
+
+
+class NotificationChannel(str, Enum):
+
+    IN_APP = "IN_APP"
+    SMS = "SMS"

@@ -16,9 +16,8 @@ class KYCAadhaarVerification(Base):
     failure_reason = Column(String(200), nullable=True)
     attempt_number = Column(Integer, nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True, nullable=False)
-    verified_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    verified_at    = Column(DateTime(timezone=True), nullable=True)
 
-    # FIX: relationship INSIDE the class (was outside, caused crash)
     user = relationship("UserProfile", back_populates="aadhaar_verifications")
 
     __table_args__ = (

@@ -18,6 +18,7 @@ class KYCBankVerificationRepository:
         failure_reason: Optional[str],
         attempt_number: int,
     ) -> KYCBankVerification:
+        now = datetime.now(timezone.utc)
         log = KYCBankVerification(
             user_id             = user_id,
             account_number      = account_number,
@@ -28,7 +29,8 @@ class KYCBankVerificationRepository:
             status              = status,
             failure_reason      = failure_reason,
             attempt_number      = attempt_number,
-            created_at          = datetime.now(timezone.utc),
+            created_at            = now,
+            verified_at           = now if status == "VERIFIED" else None,
         )
         db.add(log)
         db.commit()

@@ -1,7 +1,6 @@
-import logging
 import threading
 import time
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy import and_
 from core.database import SessionLocal
 from models.Profile_KYC.attempt_tracker import AttemptTracker
@@ -13,7 +12,6 @@ from repositories.Profile_KYC.kyc_bank_verification_repository import KYCBankVer
 from core.config import settings
 import os
 
-logger = logging.getLogger(__name__)
 
 class AutoCleanup:
     
@@ -21,23 +19,23 @@ class AutoCleanup:
         self.interval_hours = interval_hours
         self._running = False
         self._thread = None
-        logger.info(f"AutoCleanup initialized with interval: {interval_hours}h")
+        print(f"AutoCleanup initialized with interval: {interval_hours}h")
     
     def start(self):
         if self._running:
-            logger.warning("Auto cleanup already running")
+            print("Auto cleanup already running")
             return
         
         self._running = True
         self._thread = threading.Thread(target=self._run, daemon=True)
         self._thread.start()
-        logger.info(f"Auto cleanup started (runs every {self.interval_hours}h)")
+        print(f"Auto cleanup started (runs every {self.interval_hours}h)")
     
     def stop(self):
         self._running = False
         if self._thread:
             self._thread.join(timeout=5)
-        logger.info("Auto cleanup stopped")
+        print("Auto cleanup stopped")
     
     def is_running(self):
         return self._running
@@ -47,20 +45,20 @@ class AutoCleanup:
             try:
                 self._cleanup()
             except Exception as e:
-                logger.error(f"Cleanup error: {str(e)}", exc_info=True)
+                print(f"Cleanup error: {str(e)}", exc_info=True)
             
             time.sleep(self.interval_hours * 3600)
     
     def _cleanup(self):
         db = SessionLocal()
         try:
-            logger.info("Starting cleanup...")
+            print("Starting cleanup...")
             
             expired_trackers = self._cleanup_expired_trackers(db)
             failed_verifications = self._cleanup_failed_verifications(db)
             rejected_docs = self._cleanup_rejected_documents(db)
             
-            logger.info(
+            print(
                 f"Cleanup completed: "
                 f"{expired_trackers} trackers, "
                 f"{failed_verifications} verifications, "
@@ -68,7 +66,7 @@ class AutoCleanup:
             )
         
         except Exception as e:
-            logger.error(f"Cleanup failed: {str(e)}", exc_info=True)
+            print(f"Cleanup failed: {str(e)}", exc_info=True)
         
         finally:
             db.close()
@@ -85,7 +83,7 @@ class AutoCleanup:
             total_count = len(old_trackers) + len(useless_trackers)
             
             for tracker in old_trackers:
-                logger.debug(
+                print(
                     f"Deleting old tracker: {tracker.email}, "
                     f"type: {tracker.verification_type}, "
                     f"was locked until: {tracker.locked_until}"
@@ -93,7 +91,7 @@ class AutoCleanup:
                 db.delete(tracker)
             
             for tracker in useless_trackers:
-                logger.debug(
+                print(
                     f"Deleting useless tracker: {tracker.email},"
                     f"type: {tracker.verification_type},"
                     f"attempts_count=0, locked_until=null"
@@ -102,7 +100,7 @@ class AutoCleanup:
             
             if total_count > 0:
                 db.commit()
-                logger.info(
+                print(
                     f"Deleted {total_count} trackers "
                     f"(old: {len(old_trackers)}, useless: {len(useless_trackers)})"
                 )
@@ -110,12 +108,12 @@ class AutoCleanup:
             return total_count
         except Exception as e:
             db.rollback()
-            logger.error(f"Tracker cleanup error: {str(e)}")
+            print(f"Tracker cleanup error: {str(e)}")
             return 0
     
     def _cleanup_failed_verifications(self, db):
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=settings.RETENTION_DAYS)
+            cutoff = datetime.utcnow() - timedelta(days= settings.RETENTION_DAYS)
             
             pan_deleted = KYCPANVerificationRepository.delete_failed_verifications(db, cutoff)
             aadhaar_deleted = KYCAadhaarVerificationRepository.delete_failed_verifications(db, cutoff)
@@ -125,7 +123,7 @@ class AutoCleanup:
             
             if total_deleted > 0:
                 db.commit()
-                logger.info(
+                print(
                     f"Deleted {total_deleted} failed verifications "
                     f"(PAN: {pan_deleted}, Aadhaar: {aadhaar_deleted}, Bank: {bank_deleted}) "
                     f"older than {settings.RETENTION_DAYS} days"
@@ -135,12 +133,12 @@ class AutoCleanup:
             
         except Exception as e:
             db.rollback()
-            logger.error(f"Verification cleanup error: {str(e)}")
+            print(f"Verification cleanup error: {str(e)}")
             return 0
     
     def _cleanup_rejected_documents(self, db):
         try:
-            cutoff = datetime.now(timezone.utc) - timedelta(days=settings.REJECTED_DOCS_RETENTION_DAYS)
+            cutoff = datetime.utcnow() - timedelta(days= settings.REJECTED_DOCS_RETENTION_DAYS)
             
             rejected_docs = DocumentUploadRepository.get_rejected_documents_before_date(db, cutoff)
             
@@ -150,15 +148,15 @@ class AutoCleanup:
                 if os.path.exists(doc.file_path):
                     try:
                         os.remove(doc.file_path)
-                        logger.debug(f"Deleted file: {doc.file_path}")
+                        print(f"Deleted file: {doc.file_path}")
                     except Exception as e:
-                        logger.error(f"Failed to delete file {doc.file_path}: {str(e)}")
+                        print(f"Failed to delete file {doc.file_path}: {str(e)}")
                 
                 db.delete(doc)
             
             if count > 0:
                 db.commit()
-                logger.info(
+                print(
                     f"Deleted {count} rejected documents "
                     f"older than {settings.REJECTED_DOCS_RETENTION_DAYS} days"
                 )

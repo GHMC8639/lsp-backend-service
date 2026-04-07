@@ -3,17 +3,10 @@ from sqlalchemy.orm import Session
 from core.database import get_db
 from core.dependencies import require_roles
 from models.Auth.user import User
-from schemas.Profile_KYC.bank_schema import (
-    BankVerificationRequest,
-    BankVerificationResponse,
-)
+from schemas.Profile_KYC.bank_schema import BankVerificationRequest, BankVerificationResponse
 from services.Profile_KYC.bank_verification_service import BankVerificationService
-import logging
-
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/kyc", tags=["Bank Verification"])
-
 
 @router.post("/bank_verify", response_model=BankVerificationResponse)
 def verify_bank(
@@ -24,8 +17,14 @@ def verify_bank(
     try:
         # 🔥 identity comes from token
         profile = current_user.profile
+        
+        if not profile:
+            raise HTTPException(
+                status_code=404,
+                detail="KYC profile not found"
+            )
 
-        if profile.identity_status != "VERIFIED":
+        if profile.pan_status != "VERIFIED" or profile.aadhaar_status != "VERIFIED":
             raise HTTPException(
                 status_code=400,
                 detail="Complete PAN + Aadhaar verification before bank verification"
@@ -37,7 +36,7 @@ def verify_bank(
                 next="Upload required documents"
             )
 
-        BankVerificationService.verify_bank_account(
+        result= BankVerificationService.verify_bank_account(
             db=db,
             user=profile,
             account_number=request.account_number,
@@ -54,7 +53,6 @@ def verify_bank(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"Bank verification error: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail="Verification service temporarily unavailable"

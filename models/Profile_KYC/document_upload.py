@@ -1,5 +1,5 @@
 from datetime import datetime, timezone
-from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum, Index, ForeignKey, BigInteger, Float
+from sqlalchemy import Column, String, DateTime, Integer, Enum as SQLEnum, Index, ForeignKey, BigInteger
 from sqlalchemy.orm import relationship
 from core.database import Base
 import enum
@@ -14,7 +14,6 @@ class DocumentType(str, enum.Enum):
 class DocumentStatus(str, enum.Enum):
     UPLOADED     = "UPLOADED"
     UNDER_REVIEW = "UNDER_REVIEW"
-    VERIFIED     = "VERIFIED"
     APPROVED     = "APPROVED"
     REJECTED     = "REJECTED"
 
@@ -30,11 +29,6 @@ class DocumentUpload(Base):
     file_size = Column(Integer, nullable=False)
     mime_type = Column(String(100), nullable=False)
     status = Column(SQLEnum(DocumentStatus), default=DocumentStatus.UPLOADED, nullable=False)
-    extracted_name = Column(String(150), nullable=True)
-    extracted_id_number = Column(String(50),  nullable=True)
-    name_match_percentage = Column(Float,        nullable=True)
-    verification_remarks = Column(String(500),  nullable=True)
-    verified_at = Column(DateTime(timezone=True), nullable=True)
     admin_remarks = Column(String(500), nullable=True)
     uploaded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)

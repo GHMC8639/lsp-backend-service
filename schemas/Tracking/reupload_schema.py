@@ -1,28 +1,21 @@
-from typing import Optional
-from pydantic import BaseModel
+# app/schemas/reupload_schema.py
 
+from pydantic import BaseModel
+from typing import Optional
 
 class DocumentReuploadRequest(BaseModel):
     document_type: str
-    reason: Optional[str] = None
-    comments: Optional[str] = None
-
-    class Config:
-        from_attributes = True
+    new_document_url: str
+    rejection_reason: Optional[str] = None
 
 
 class DocumentReuploadResponse(BaseModel):
-    success: bool
-    message: str
-    next_status: Optional[str] = None
-
-    class Config:
-        from_attributes = True
-
-
-class FileUploadResult(BaseModel):
-    file_name: str
-    file_url: str
+    id: int
+    application_id: int
+    document_type: str
+    new_document_url: str
+    reason: Optional[str]
+    status: str
 
     class Config:
         from_attributes = True

@@ -2,21 +2,14 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timezone
-import logging
-
 from core.database import get_db
 from core.dependencies import require_roles
 from models.Auth.user import User
 from models.Profile_KYC.document_upload import DocumentStatus
 from repositories.Profile_KYC.user_repository import UserRepository
 from repositories.Profile_KYC.document_upload_repository import DocumentUploadRepository
-from schemas.Profile_KYC.document_schema import (
-    DocumentReviewRequest,
-    DocumentReviewResponse,
-    UserKYCDetails
-)
+from schemas.Profile_KYC.document_schema import DocumentReviewRequest, DocumentReviewResponse, UserKYCDetails
 
-logger = logging.getLogger(__name__)
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Panel"])
 
@@ -41,6 +34,8 @@ def review_document(
         if document.status == DocumentStatus.REJECTED:
             raise HTTPException(400, "Document already rejected. User must re-upload.")
 
+        request.action = request.action.upper()
+
         if request.action not in ["APPROVE", "REJECT"]:
             raise HTTPException(400, "Invalid action. Must be APPROVE or REJECT")
 
@@ -63,9 +58,9 @@ def review_document(
         if profile:
             all_docs = DocumentUploadRepository.get_by_user_id(db, profile.user_id)
 
-            verified_or_approved = {DocumentStatus.VERIFIED, DocumentStatus.APPROVED}
-            required_identity = ["AADHAAR_FRONT", "AADHAAR_BACK", "PAN_CARD"]
-            income_docs       = ["SALARY_SLIP", "BANK_STATEMENT"]
+            verified_or_approved = {DocumentStatus.APPROVED}
+            required_identity    = ["AADHAAR_FRONT", "AADHAAR_BACK", "PAN_CARD"]
+            income_docs          = ["SALARY_SLIP", "BANK_STATEMENT"]
 
             identity_done = all(
                 any(d.document_type.value == req and d.status in verified_or_approved for d in all_docs)
@@ -87,7 +82,6 @@ def review_document(
                 ):
                     profile.kyc_status = "COMPLETED"
                     kyc_completed = True
-                    logger.info(f"KYC COMPLETED for user {profile.user_id}")
 
             else:
                 profile.document_status = "UPLOADED"
@@ -110,8 +104,7 @@ def review_document(
         raise
     except Exception as e:
         db.rollback()
-        logger.error(f"Error reviewing document: {str(e)}", exc_info=True)
-        raise HTTPException(500, "Failed to review document")
+        raise HTTPException(500, f"Failed to review document: {str(e)}")
 
 
 # =====================================================

@@ -1,14 +1,9 @@
-import logging
 from datetime import datetime, timezone
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
-
 from repositories.Profile_KYC.user_repository import UserRepository
 from models.Profile_KYC.user_profile import UserProfile
 from schemas.Profile_KYC.user_profile_schema import UserRegistrationRequest
-
-logger = logging.getLogger(__name__)
-
 
 class RegistrationService:
 
@@ -70,25 +65,20 @@ class RegistrationService:
 
         profile = UserRepository.create_user(db, new_profile)
 
-        logger.info(f"KYC profile created for user_id={user_id}")
-
         return profile
 
     # =====================================================
     # GET PROFILE
     # =====================================================
     @staticmethod
-    def get_profile_by_user_id(
-        db: Session,
-        user_id: int
-    ) -> UserProfile:
+    def get_profile(db: Session, user_id: int):
 
         profile = UserRepository.get_by_user_id(db, user_id)
 
         if not profile:
             raise HTTPException(
                 status_code=404,
-                detail="KYC profile not found for this user."
+                detail="KYC profile not found."
             )
 
         return profile
@@ -97,7 +87,7 @@ class RegistrationService:
     # UPDATE PROFILE
     # =====================================================
     @staticmethod
-    def update_profile_by_user_id(
+    def update_profile(
         db: Session,
         user_id: int,
         update_data
@@ -201,10 +191,6 @@ class RegistrationService:
         user.updated_at = datetime.now(timezone.utc)
 
         UserRepository.update_user(db, user)
-
-        logger.info(
-            f"Profile updated for user_id={user_id}. Fields: {updated_fields}"
-        )
 
         return {
             "success": True,

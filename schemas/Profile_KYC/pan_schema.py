@@ -1,11 +1,12 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, EmailStr
 
 class PANVerificationRequest(BaseModel):
-    user_id: int
+    email: EmailStr
 
 class PANVerificationResponse(BaseModel):
     message: str
     pan_status: str
-    verified_name: str | None = None
-    identity_status: str
     next_step: str
+
+
+    

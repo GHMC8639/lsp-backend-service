@@ -1,5 +1,3 @@
-import logging
-import secrets
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -7,105 +5,14 @@ from models.Profile_KYC.attempt_tracker import VerificationType
 from repositories.Profile_KYC.user_repository import UserRepository
 from repositories.Profile_KYC.attempt_tracker_repository import AttemptTrackerRepository
 from repositories.Profile_KYC.kyc_aadhaar_verification_repository import KYCAadhaarVerificationRepository
-from providers.aadhaar_provider import get_aadhaar_provider
 from core.config import settings
+from repositories.Profile_KYC.dummy_pan_repository import DummyPANRepository 
 
-logger = logging.getLogger(__name__)
-
-AADHAAR_TOKEN_EXPIRY_MINUTES = 10
-
-def _clear_aadhaar_session(user):
-    user.aadhaar_initiate_token      = None
-    user.aadhaar_token_created_at    = None
-    user.aadhaar_token_attempt_count = 0
 
 class AadhaarVerificationService:
 
     @staticmethod
-    def initiate_aadhaar(user_id: int, db: Session) -> dict:
-        user = UserRepository.get_by_user_id(db, user_id)
-        if not user:
-            raise HTTPException(404, "User not found")
-
-        if user.pan_status != "VERIFIED":
-            raise HTTPException(400, "Please complete PAN verification before Aadhaar verification")
-
-        if user.aadhaar_status == "VERIFIED":
-            raise HTTPException(400, "Aadhaar is already verified")
-
-        now     = datetime.now(timezone.utc)
-        tracker = AttemptTrackerRepository.get_or_create(db, user.email, VerificationType.AADHAAR)
-
-        if tracker.locked_until:
-            locked_until = tracker.locked_until
-            if locked_until.tzinfo is None:
-                locked_until = locked_until.replace(tzinfo=timezone.utc)
-            if locked_until > now:
-                remaining_hrs = round((locked_until - now).total_seconds() / 3600, 1)
-                raise HTTPException(
-                    423,
-                    f"Aadhaar verification is blocked for {remaining_hrs} more hour(s) "
-                    f"due to too many failed attempts."
-                )
-            AttemptTrackerRepository.reset_attempts(db, tracker)
-        current_initiates = AttemptTrackerRepository.increment_attempt(db, tracker)
-
-        if current_initiates > settings.AADHAAR_MAX_ATTEMPTS:
-            AttemptTrackerRepository.lock_tracker(
-                db, tracker, now + timedelta(hours=settings.AADHAAR_COOLDOWN_HOURS)
-            )
-            _clear_aadhaar_session(user)
-            UserRepository.save(db)
-            raise HTTPException(
-                423,
-                f"Maximum attempts ({settings.AADHAAR_MAX_ATTEMPTS}) exceeded. "
-                f"Aadhaar verification blocked for {settings.AADHAAR_COOLDOWN_HOURS} hours."
-            )
-        token = secrets.token_hex(32)
-        user.aadhaar_initiate_token      = token
-        user.aadhaar_token_created_at    = now
-        user.aadhaar_token_attempt_count = 0
-        UserRepository.save(db)
-
-        attempts_used      = current_initiates
-        attempts_remaining = settings.AADHAAR_MAX_ATTEMPTS - attempts_used
-
-        logger.info(
-            f"Aadhaar initiate #{attempts_used}/{settings.AADHAAR_MAX_ATTEMPTS} "
-            f"for user_id={user_id} — token valid {AADHAAR_TOKEN_EXPIRY_MINUTES} min"
-        )
-
-        provider = get_aadhaar_provider()
-
-        base_msg = (
-            f"Aadhaar session started. "
-            f"Token valid for {AADHAAR_TOKEN_EXPIRY_MINUTES} minutes. "
-            f"Attempt {attempts_used}/{settings.AADHAAR_MAX_ATTEMPTS}. "
-            f"{attempts_remaining} attempt(s) remaining before 24hr block."
-        )
-
-        if settings.VERIFICATION_MODE == "api":
-            auth_url = provider.get_auth_url(state=str(user.user_id))
-            return {
-                "message":          base_msg + " Redirect user to auth_url.",
-                "auth_url":         auth_url,
-                "initiate_token":   token,
-                "token_expires_in": f"{AADHAAR_TOKEN_EXPIRY_MINUTES} minutes",
-                "attempt":          f"{attempts_used}/{settings.AADHAAR_MAX_ATTEMPTS}",
-                "mode":             "api",
-            }
-        else:
-            return {
-                "message":          base_msg,
-                "auth_url":         None,
-                "initiate_token":   token,
-                "token_expires_in": f"{AADHAAR_TOKEN_EXPIRY_MINUTES} minutes",
-                "attempt":          f"{attempts_used}/{settings.AADHAAR_MAX_ATTEMPTS}",
-                "mode":             "dummy",
-            }
-
-    @staticmethod
-    def verify_aadhaar(db: Session, user_id: int, initiate_token: str, auth_code: str = None) -> dict:
+    def verify_aadhaar(db: Session, user_id: int) -> dict:
         user = UserRepository.get_by_user_id(db, user_id)
         if not user:
             raise HTTPException(404, "User not found")
@@ -117,138 +24,106 @@ class AadhaarVerificationService:
             return {
                 "message":         "Aadhaar already verified",
                 "aadhaar_status":  "VERIFIED",
-                "identity_status": user.identity_status,
                 "next_step":       "Proceed to bank account verification",
             }
-
-        if user.aadhaar_locked:
-            raise HTTPException(403, "Aadhaar is locked")
-
-        now     = datetime.now(timezone.utc)
-        tracker = AttemptTrackerRepository.get_or_create(db, user.email, VerificationType.AADHAAR)
-
-        if tracker.locked_until:
-            locked_until = tracker.locked_until
-            if locked_until.tzinfo is None:
-                locked_until = locked_until.replace(tzinfo=timezone.utc)
-            if locked_until > now:
-                remaining_hrs = round((locked_until - now).total_seconds() / 3600, 1)
-                raise HTTPException( 423, f"Aadhaar verification is blocked for {remaining_hrs} more hour(s).")
-        if not user.aadhaar_initiate_token:
-            raise HTTPException(
-                400,
-                "No active Aadhaar session. "
-                "Please call POST /api/v1/kyc/aadhaar-initiate first."
-            )
-        if user.aadhaar_token_created_at:
-            created_at = user.aadhaar_token_created_at
-            if created_at.tzinfo is None:
-                created_at = created_at.replace(tzinfo=timezone.utc)
-
-            age_minutes = (now - created_at).total_seconds() / 60
-            if age_minutes > AADHAAR_TOKEN_EXPIRY_MINUTES:
-                _clear_aadhaar_session(user)
-                UserRepository.save(db)
-                raise HTTPException(
-                    400,
-                    f"Session token expired (valid {AADHAAR_TOKEN_EXPIRY_MINUTES} minutes). "
-                    "Please call POST /api/v1/kyc/aadhaar-initiate to get a new token."
-                )
-        if user.aadhaar_initiate_token != initiate_token:
-            raise HTTPException(
-                400,
-                "Invalid or expired token. "
-                "Please call POST /api/v1/kyc/aadhaar-initiate to get a fresh token."
-            )
+        
         aadhaar_number = user.aadhaar_number
         if not aadhaar_number or len(aadhaar_number) != 12:
             raise HTTPException(400, "Invalid Aadhaar number in profile")
-        
-        existing = KYCAadhaarVerificationRepository.get_verified_by_aadhaar(db, aadhaar_number)
-        if existing and existing.user_id != user.user_id:
-            raise HTTPException(409, "This Aadhaar number is already linked to another account")
 
-        current_attempt = tracker.attempts_count  
-        provider = get_aadhaar_provider()
-        try:
-            result = provider.verify(
-                db=db,
-                aadhaar_number=aadhaar_number,
-                dob_submitted=user.dob,
-                auth_code=auth_code,
+        tracker = AttemptTrackerRepository.get_by_email_and_type(db, user.email, VerificationType.AADHAAR)
+        if not tracker:
+            tracker = AttemptTrackerRepository.create_tracker(db, user.email, VerificationType.AADHAAR)
+
+        now     = datetime.now(timezone.utc)
+
+        if tracker.locked_until and tracker.locked_until > now:
+            raise HTTPException(
+                423,
+                f"Aadhaar verification blocked. Try after {settings.AADHAAR_COOLDOWN_HOURS} hours.",
             )
-        except RuntimeError as e:
-            raise HTTPException(503, str(e))
 
-        verified_dob = result.get("verified_dob") or ""
+        
+        if tracker.locked_until and tracker.locked_until <= now:
+            AttemptTrackerRepository.reset_attempts(db, tracker)
 
-        if not result["success"]:
-            _clear_aadhaar_session(user)
+        current_attempt = AttemptTrackerRepository.increment_attempt(db, tracker)
 
+        if current_attempt > settings.AADHAAR_MAX_ATTEMPTS:
+            AttemptTrackerRepository.lock_tracker(
+                db, tracker, now + timedelta(hours=settings.AADHAAR_COOLDOWN_HOURS)
+            )
+            raise HTTPException(
+                423,
+                f"Maximum attempts ({settings.AADHAAR_MAX_ATTEMPTS}) exceeded. "
+                f"Try after {settings.AADHAAR_COOLDOWN_HOURS} hours.",
+            )
+
+        aadhaar_record = DummyPANRepository.get_by_aadhaar_number(db, aadhaar_number)
+
+        failure_reason = None
+
+        if not aadhaar_record:
+            failure_reason = "Aadhaar number not found in records"
+        elif aadhaar_record.dob != user.dob:
+            failure_reason = "Date of birth does not match Aadhaar records"
+
+        if failure_reason:
             if current_attempt >= settings.AADHAAR_MAX_ATTEMPTS:
                 status = "BLOCKED"
+                AttemptTrackerRepository.lock_tracker(
+                    db, tracker, now + timedelta(hours=settings.AADHAAR_COOLDOWN_HOURS)
+                )
                 user.aadhaar_status = "BLOCKED"
-                AttemptTrackerRepository.lock_tracker(db, tracker, now + timedelta(hours=settings.AADHAAR_COOLDOWN_HOURS))
-                KYCAadhaarVerificationRepository.create_verification_log(
-                    db=db, user_id=user.user_id,
-                    aadhaar_number=aadhaar_number,
-                    dob_submitted=str(user.dob), verified_dob=verified_dob,
-                    dob_match=False, status=status,
-                    failure_reason=result["failure_reason"],
-                    attempt_number=current_attempt,
-                )
-                UserRepository.save(db)
-                raise HTTPException(
-                    423,
-                    f"{result['failure_reason']}. "
-                    f"Maximum attempts ({settings.AADHAAR_MAX_ATTEMPTS}) reached. "
-                    f"Aadhaar verification blocked for {settings.AADHAAR_COOLDOWN_HOURS} hours."
-                )
             else:
                 status = "FAILED"
                 user.aadhaar_status = "FAILED"
-                remaining = settings.AADHAAR_MAX_ATTEMPTS - current_attempt
-                KYCAadhaarVerificationRepository.create_verification_log(
-                    db=db, user_id=user.user_id,
-                    aadhaar_number=aadhaar_number,
-                    dob_submitted=str(user.dob), verified_dob=verified_dob,
-                    dob_match=False, status=status,
-                    failure_reason=result["failure_reason"],
-                    attempt_number=current_attempt,
-                )
-                UserRepository.save(db)
-                raise HTTPException(
-                    400,
-                    f"{result['failure_reason']}. "
-                    f"Attempt {current_attempt}/{settings.AADHAAR_MAX_ATTEMPTS}. "
-                    f"{remaining} attempt(s) remaining. "
-                    "Please fix your details and call /aadhaar-initiate again for a new token."
-                )
-        user.aadhaar_status      = "VERIFIED"
-        user.aadhaar_locked      = True
-        user.dob_locked          = True
+
+            KYCAadhaarVerificationRepository.create_verification_log(
+                db             = db,
+                user_id        = user.user_id,
+                aadhaar_number = aadhaar_number,
+                dob_submitted  = str(user.dob),
+                verified_dob   = "",
+                dob_match      = False,
+                status         = status,
+                failure_reason = failure_reason,
+                attempt_number = current_attempt,
+            )
+            UserRepository.update_user(db, user)
+
+            remaining = settings.AADHAAR_MAX_ATTEMPTS - current_attempt
+            if remaining > 0:
+                raise HTTPException(400, f"{failure_reason}. {remaining} attempt(s) remaining.")
+            raise HTTPException(
+                423,
+                f"{failure_reason}. Maximum attempts reached. "
+                f"Blocked for {settings.AADHAAR_COOLDOWN_HOURS} hours.",
+            )
+
+        user.aadhaar_status     = "VERIFIED"
+        user.aadhaar_locked     = True
+        user.dob_locked         = True
         user.aadhaar_verified_at = now
 
-        if user.pan_status == "VERIFIED":
-            user.identity_status = "VERIFIED"
-
-        _clear_aadhaar_session(user)
-
         KYCAadhaarVerificationRepository.create_verification_log(
-            db=db, user_id=user.user_id,
-            aadhaar_number=aadhaar_number,
-            dob_submitted=str(user.dob), verified_dob=verified_dob,
-            dob_match=True, status="VERIFIED",
-            failure_reason=None, attempt_number=current_attempt,
+            db             = db,
+            user_id        = user.user_id,
+            aadhaar_number = aadhaar_number,
+            dob_submitted  = str(user.dob),
+            verified_dob   = str(user.dob),
+            dob_match      = True,
+            status         = "VERIFIED",
+            failure_reason = None,
+            attempt_number = current_attempt,
         )
+
         AttemptTrackerRepository.reset_attempts(db, tracker)
         UserRepository.update_user(db, user)
 
-        logger.info(f"Aadhaar VERIFIED for user {user.user_id} (mode={settings.VERIFICATION_MODE})")
-
         return {
-            "message":         "Aadhaar verified successfully",
-            "aadhaar_status":  user.aadhaar_status,
-            "identity_status": user.identity_status,
-            "next_step":       "Proceed to bank account verification",
+            "message":        "Aadhaar verified successfully",
+            "aadhaar_status": user.aadhaar_status,
+            "next_step":      "Proceed to bank account verification",
         }
+        

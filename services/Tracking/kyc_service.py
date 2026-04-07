@@ -1,24 +1,18 @@
+from sqlalchemy.orm import Session
 from repositories.Tracking.kyc_repo import KYCRepository
+
 
 class KYCService:
 
     @staticmethod
-    def fetch_kyc_status(db, user_id: int):
-        profile = KYCRepository.get_user_kyc(db, user_id)
+    def fetch_user_kyc_status(db: Session, user_id: int) -> str | None:
+        profile = KYCRepository.get_kyc_status(db, user_id)
 
         if not profile:
-            return {
-                "pan": "PENDING",
-                "aadhaar": "PENDING",
-                "bank": "PENDING",
-                "overall": "INCOMPLETE"
-            }
+            return None
 
-        return {
-            "pan": profile.pan_status,
-            "aadhaar": profile.aadhaar_status,
-            "bank": profile.bank_status,
-            "identity": profile.identity_status,
-            "document": profile.document_status,
-            "overall": profile.kyc_status
-        }
+        return profile.kyc_status
+
+    @staticmethod
+    def is_kyc_completed(kyc_status: str | None) -> bool:
+        return kyc_status == "COMPLETED"

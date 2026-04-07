@@ -1,23 +1,18 @@
+# main.py
 import asyncio
 from fastapi import FastAPI
+from contextlib import asynccontextmanager
+import os
 from models.Support import chat, complaint, grievance
 from models.Esign import agreements, esign_session, signed_documents, audit_logs
-from routers.Support import chat, complaint, contact, faq, grievance
-from routers.Support.faq import router as faq_router
-from routers.Support.chat import router as chat_router
-from routers.Support.complaint import router as complaint_router
-from routers.Support.contact import router as contact_router
-from routers.Support.grievance import router as grievance_router
-
-from routers.Esign.esign_router import router as esign_router
-from routers.Esign.agreement_router import router as agreement_router
-from routers.Esign.disbursement_router import router as disbursement_router
-
 from services.Auth.otp_cleanup import cleanup_otps
 from core.database import Base
 from core.database import engine, SessionLocal
 from core.seed import create_default_super_admin
 from core.config import settings
+
+# Importing routers
+
 from routers.Auth import lender
 from routers.Auth import superadmin_access
 from routers.Auth import login_SL
@@ -36,6 +31,15 @@ from routers.Loan_application.loan_application_summary_router import router as l
 from routers.Loan_application.loan_application_declaration_router import router as loan_application_declaration_router
 from routers.Loan_application.lender_router import router as lender_router
 from routers.Loan_application.loan_disbursement_router import router as loan_disbursement_router
+from routers.Support import chat, complaint, contact, faq, grievance
+from routers.Support.faq import router as faq_router
+from routers.Support.chat import router as chat_router
+from routers.Support.complaint import router as complaint_router
+from routers.Support.contact import router as contact_router
+from routers.Support.grievance import router as grievance_router
+from routers.Esign.esign_router import router as esign_router
+from routers.Esign.agreement_router import router as agreement_router
+from routers.Esign.disbursement_router import router as disbursement_router
 from routers.Profile_KYC.profile_router import router as profile_router
 from routers.Profile_KYC.pan_router import router as pan_router
 from routers.Profile_KYC.aadhaar_router import router as aadhaar_router
@@ -47,31 +51,58 @@ from routers.Consent.consent_routers import router as consent_router
 from routers.Consent.legal_routers import router as legal_router
 from routers.Tracking.tracking_router import router as tracking_router
 from routers.Tracking.reupload_router import router as reupload_router
-from routers.Tracking.status_update_router import router as status_update_router
-from routers.Tracking.nbfc_webhook_router import router as nbfc_router
 from routers.Tracking.notifications_router import router as notifications_router
+from routers.Tracking.nbfc_webhook_router import router as nbfc_webhook_router
+from routers.Tracking.internal_status_router import router as internal_status_router
+from routers.Settings.profile_router import router as settings_profile_router
+from routers.Settings.settings_router import router as settings_router
 
 
 
+print("DB URL USED BY APP:", settings.DATABASE_URL)
 Base.metadata.create_all(bind=engine)
+auto_cleanup = AutoCleanup(interval_hours=24)
 
-app = FastAPI(title="Loan Service Platform - OTP and Session Auth API")
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    Base.metadata.create_all(bind=engine, checkfirst=True)
+
+        # 🔍 DEBUG PRINTS (ADD HERE)
+    print("NAME:", settings.SUPER_ADMIN_NAME)
+    print("MOBILE:", settings.SUPER_ADMIN_MOBILE)
+    print("PASSWORD:", settings.SUPER_ADMIN_PASSWORD)
+
+    upload_dirs = ["uploads","uploads/aadhaar","uploads/pan","uploads/salary_slips","uploads/bank_statements"]
+    for dir_path in upload_dirs:
+        os.makedirs(dir_path, exist_ok=True)
+
+    auto_cleanup.start()
+    print("Auto cleanup service started")
+
+    yield
+
+    auto_cleanup.stop()
+    print("Auto cleanup service stopped")
+
+
+app = FastAPI(title="Loan Service Platform - OTP and Session Auth API",lifespan=lifespan)
 
 @app.on_event("startup")
 def startup():
-    db = SessionLocal()
-    try:
-        if settings.SUPER_ADMIN_MOBILE and settings.SUPER_ADMIN_PASSWORD:
-            create_default_super_admin(
-                db,
-                settings.SUPER_ADMIN_NAME,
-                settings.SUPER_ADMIN_MOBILE,
-                settings.SUPER_ADMIN_PASSWORD,
-                settings.SUPER_ADMIN_DEVICE_ID,
-              
-            )
-    finally:
-        db.close()
+    print("👉 Calling create_default_super_admin()")
+
+db = SessionLocal()
+try:
+    result = create_default_super_admin(
+        db,
+        settings.SUPER_ADMIN_NAME,
+        settings.SUPER_ADMIN_MOBILE,
+        settings.SUPER_ADMIN_PASSWORD,
+        settings.SUPER_ADMIN_DEVICE_ID,
+    )
+    print("👉 Result:", result)
+finally:
+    db.close()
 
 
 #Auth Routers
@@ -116,9 +147,9 @@ app.include_router(loan_disbursement_router)
 #Tracking Routers
 app.include_router(tracking_router)
 app.include_router(reupload_router)
-app.include_router(status_update_router)
-app.include_router(nbfc_router)
 app.include_router(notifications_router)
+app.include_router(nbfc_webhook_router)
+app.include_router(internal_status_router)
 
 
 
@@ -133,6 +164,10 @@ app.include_router(grievance_router)
 app.include_router(agreement_router)
 app.include_router(esign_router)
 app.include_router(disbursement_router)
+
+#Settings Routers
+app.include_router(settings_profile_router)
+app.include_router(settings_router)
 
 # OTP Cleanup Task
 async def otp_cleanup_loop():

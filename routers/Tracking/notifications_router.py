@@ -1,17 +1,30 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
-from core.database import SessionLocal
+
+from core.database import get_db
+
 from services.Tracking.notification_service import NotificationService
+from schemas.Tracking.notification_schemas import NotificationResponse
 
-router = APIRouter(prefix="/api/v1", tags=["Notifications"])
+# ✅ USE THIS INSTEAD
+from core.permissions import user_required
+from models.Auth.user import User
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
 
-@router.get("/notifications")
-def get_notifications(user_id: int, db: Session = Depends(get_db)):
-    return NotificationService.get_notifications(db, user_id)
+router = APIRouter(
+    prefix="/loan",   # 🔥 fixed (lowercase best practice)
+    tags=["Notifications"]
+)
+
+
+@router.get("/notifications", response_model=list[NotificationResponse])
+def get_user_notifications(
+    db: Session = Depends(get_db),
+
+    # ✅ RBAC added
+    current_user: User = Depends(user_required)
+):
+    return NotificationService.get_user_notifications(
+        db=db,
+        user_id=current_user.id   # ✅ secure
+    )

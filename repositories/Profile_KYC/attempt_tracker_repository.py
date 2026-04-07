@@ -11,26 +11,22 @@ class AttemptTrackerRepository:
     
     @staticmethod
     def create_tracker(db: Session, email: str, verification_type: VerificationType) -> AttemptTracker:
-        tracker = AttemptTrackerRepository.get_by_email_and_type(db, email, verification_type)
-        if not tracker:
-            now = datetime.now(timezone.utc)
-            tracker = AttemptTracker(
-                email=email,
-                verification_type=verification_type,
-                attempts_count=0,
-                first_attempt_at=now,
-                last_attempt_at=now,
-                created_at=now,
-            )
-            db.add(tracker)
-            db.flush()
-        return tracker
+        existing = AttemptTrackerRepository.get_by_email_and_type(db, email, verification_type)
+        if existing:
+            return existing
 
-    
-    @staticmethod
-    def update_tracker(db: Session, tracker: AttemptTracker) -> None:
-        db.commit()
-        db.refresh(tracker)
+        now     = datetime.now(timezone.utc)
+        tracker = AttemptTracker(
+            email             = email,
+            verification_type = verification_type,
+            attempts_count    = 0,
+            first_attempt_at  = now,
+            last_attempt_at   = now,
+            created_at        = now,
+        )
+        db.add(tracker)
+        db.flush()  
+        return tracker
     
     @staticmethod
     def reset_attempts(db: Session, tracker: AttemptTracker) -> None:
@@ -46,24 +42,8 @@ class AttemptTrackerRepository:
         return tracker.attempts_count
     
     @staticmethod
-    def decrement_attempt(db: Session, tracker: AttemptTracker) -> int:
-        if tracker.attempts_count > 0:
-            tracker.attempts_count -= 1
-        db.commit()
-        return tracker.attempts_count
-    
-    @staticmethod
     def lock_tracker(db: Session, tracker: AttemptTracker, locked_until: datetime) -> None:
         tracker.locked_until = locked_until
         db.commit()
     
-    @staticmethod
-    def get_or_create(db: Session, email: str, verification_type: VerificationType) -> AttemptTracker:
-        tracker = AttemptTrackerRepository.get_by_email_and_type(db, email, verification_type)
-
-        if not tracker:
-            tracker = AttemptTrackerRepository.create_tracker(db, email, verification_type)
-            db.commit()
-            db.refresh(tracker)
-
-        return tracker
+   

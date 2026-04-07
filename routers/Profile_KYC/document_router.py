@@ -1,109 +1,103 @@
-from typing import List
-from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form, Query, BackgroundTasks
+from fastapi import APIRouter, Depends, HTTPException, UploadFile, File, Form
+from typing import Optional
 from sqlalchemy.orm import Session
 from core.database import get_db
-from core.config import settings
-from schemas.Profile_KYC.document_schema import (
-    AllDocumentsResponse,
-    DocumentListItem,
-    BulkDocumentUploadResponse,
-    BulkDocumentUploadResult,
-)
+from core.dependencies import require_roles
+from models.Auth.user import User
+from schemas.Profile_KYC.document_schema import BulkDocumentUploadResponse, SingleDocumentResult, AllDocumentsResponse, DocumentListItem
 from services.Profile_KYC.document_upload_service import DocumentUploadService
-import logging
- 
-logger = logging.getLogger(__name__)
- 
-router = APIRouter(prefix="/api/v1/documents", tags=["Document Upload & Verification"])
- 
-MAX_FILE_SIZE = 2 * 1024 * 1024  # 2MB
-VALID_TYPES = ["PAN_CARD", "AADHAAR_FRONT", "AADHAAR_BACK", "SALARY_SLIP", "BANK_STATEMENT"]
- 
- 
-@router.post("/upload/bulk", response_model=BulkDocumentUploadResponse)
-async def bulk_upload_documents(
-    background_tasks: BackgroundTasks,
-    user_id: int = Form(..., description="User ID"),
-    document_types: List[str] = Form(
-        ...,
-        description="List of document types (up to 4): PAN_CARD, AADHAAR_FRONT, AADHAAR_BACK, SALARY_SLIP, BANK_STATEMENT",
-    ),
-    files: List[UploadFile] = File(..., description="Up to 4 files. JPG/PNG for ID docs, PDF for financial docs. Max 2MB each."),
+
+router = APIRouter(prefix="/kyc/documents", tags=["Document Upload"])
+
+
+# =====================================================
+# UPLOAD DOCUMENTS
+# =====================================================
+@router.post("/upload", response_model=BulkDocumentUploadResponse)
+async def upload_documents(
+    pan_card: Optional[UploadFile] = File(None),
+    aadhaar_front: Optional[UploadFile] = File(None),
+    aadhaar_back: Optional[UploadFile] = File(None),
+    income_proof: Optional[UploadFile] = File(None),
+    income_type: Optional[str] = Form(None),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("USER")),  
 ):
-    try:
-        normalized: List[str] = []
-        for item in document_types:
-            for part in item.split(","):
-                part = part.strip()
-                if part:
-                    normalized.append(part)
-        document_types = normalized
- 
-        if len(files) > 4:
-            raise HTTPException(400, "Maximum 4 documents can be uploaded at once")
- 
-        if len(files) != len(document_types):
-            raise HTTPException(
-                400,
-                f"Mismatch: {len(files)} file(s) but {len(document_types)} document_type(s) provided",
-            )
- 
-        for dt in document_types:
-            if dt not in VALID_TYPES:
-                raise HTTPException(
-                    400,
-                    {"error": f"Invalid document type: {dt}", "valid_types": VALID_TYPES},
-                )
- 
-        for file in files:
-            if not file or not file.filename:
-                raise HTTPException(400, "One or more files are missing or have no filename")
-            contents = await file.read()
-            if len(contents) > MAX_FILE_SIZE:
-                raise HTTPException(
-                    400,
-                    f"File '{file.filename}' is too large. Max 2MB. Got {round(len(contents)/1024/1024, 2)}MB",
-                )
+    profile = current_user.profile
+
+    if not profile:
+        raise HTTPException(404, "KYC profile not found")
+
+    files_provided = [f for f in [pan_card, aadhaar_front, aadhaar_back, income_proof] if f and f.filename]
+    if not files_provided:
+        raise HTTPException(400, "No files provided")
+
+    IMAGE_MAX = 2 * 1024 * 1024
+    PDF_MAX   = 3 * 1024 * 1024
+
+    for file, label, max_bytes in [
+        (pan_card,      "PAN Card",      IMAGE_MAX),
+        (aadhaar_front, "Aadhaar Front", IMAGE_MAX),
+        (aadhaar_back,  "Aadhaar Back",  IMAGE_MAX),
+        (income_proof,  "Income Proof",  PDF_MAX),
+    ]:
+        if file and file.filename:
+            content = await file.read()
+            if len(content) > max_bytes:
+                raise HTTPException(400, f"{label} too large")
             await file.seek(0)
- 
+
+    try:
         result = DocumentUploadService.bulk_upload_documents(
             db=db,
-            user_id=user_id,
-            document_types=document_types,
-            files=files,
+            user_id=profile.user_id, 
+            pan_card=pan_card,
+            aadhaar_front=aadhaar_front,
+            aadhaar_back=aadhaar_back,
+            income_proof=income_proof,
+            income_type=income_type,
         )
- 
-        if settings.VERIFICATION_MODE == "api":
-            for r in result["results"]:
-                if r["success"] and r.get("id"):
-                    background_tasks.add_task(
-                        DocumentUploadService.verify_document_background,
-                        r["id"],
-                    )
- 
+
+        uploaded = [SingleDocumentResult(**doc) for doc in result["uploaded_documents"]]
+
         return BulkDocumentUploadResponse(
-            total_submitted=result["total_submitted"],
-            total_success=result["total_success"],
-            total_failed=result["total_failed"],
-            results=[BulkDocumentUploadResult(**r) for r in result["results"]],
+            user_id=result["user_id"],
+            email=result["email"],
+            uploaded_documents=uploaded,
+            total_uploaded=result["total_uploaded"],
+            skipped_documents=result["skipped_documents"],
+            missing_documents=result["missing_documents"],
+            all_required_uploaded=result["all_required_uploaded"],
+            message=result["message"],
         )
- 
+
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Bulk upload error: {e}", exc_info=True)
-        raise HTTPException(500, f"Bulk upload failed: {str(e)}")
- 
- 
+    except Exception as exc:
+        raise HTTPException(500, f"Document upload failed: {exc}")
+
+
+# =====================================================
+# LIST DOCUMENTS
+# =====================================================
 @router.get("/list", response_model=AllDocumentsResponse)
 def list_documents(
-    user_id: int = Query(..., description="User ID"),
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("USER"))
 ):
+    profile = current_user.profile
+
+    if not profile:
+        raise HTTPException(404, "KYC profile not found")
+
     try:
-        result = DocumentUploadService.list_documents(db=db, user_id=user_id)
+        result = DocumentUploadService.list_documents(
+            db=db,
+            user_id=profile.user_id 
+        )
+
         documents = [DocumentListItem(**doc) for doc in result["documents"]]
+
         return AllDocumentsResponse(
             user_id=result["user_id"],
             email=result["email"],
@@ -113,24 +107,35 @@ def list_documents(
             missing_documents=result["missing_documents"],
             all_approved=result["all_approved"],
         )
+
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"List error: {e}", exc_info=True)
+    except Exception:
         raise HTTPException(500, "Failed to retrieve documents")
- 
- 
+
+
+# =====================================================
+# DELETE DOCUMENT
+# =====================================================
 @router.delete("/{document_id}")
 def delete_document(
-    document_id: str,
-    user_id: int = Query(..., description="User ID for authorization"),
+    document_id: int,
     db: Session = Depends(get_db),
+    current_user: User = Depends(require_roles("USER"))
 ):
+    profile = current_user.profile
+
+    if not profile:
+        raise HTTPException(404, "KYC profile not found")
+
     try:
-        return DocumentUploadService.delete_document(db=db, document_id=document_id, user_id=user_id)
+        return DocumentUploadService.delete_document(
+            db=db,
+            document_id=document_id,
+            user_id=profile.user_id 
+        )
+
     except HTTPException:
         raise
-    except Exception as e:
-        logger.error(f"Delete error: {e}", exc_info=True)
+    except Exception:
         raise HTTPException(500, "Failed to delete document")
- 

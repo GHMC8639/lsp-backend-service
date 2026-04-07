@@ -2,6 +2,8 @@ from pydantic import BaseModel, ConfigDict
 from typing import Optional
 from decimal import Decimal
 from core.enums import LoanApplicationStep, LoanTenureMonths
+from pydantic import BaseModel
+from datetime import datetime
 
 
 # =====================================================
@@ -71,3 +73,18 @@ class LoanApplicationResponseSchema(BaseModel):
     interest_rate: Optional[Decimal] = None
 
     model_config = ConfigDict(from_attributes=True)
+
+
+
+
+class LoanApplicationBase(BaseModel):
+    id: int
+    application_status: str
+    current_step: str
+
+    class Config:
+        from_attributes = True
+
+
+class LoanApplicationListItem(LoanApplicationBase):
+    created_at: datetime | None = None

@@ -9,9 +9,12 @@ from services.Esign.loan_client import LoanClient
 
 from schemas.Esign.agreement_schema import AgreementResponse
 
+# ✅ ADD THIS
+from core.permissions import user_required
+
 
 router = APIRouter(
-    prefix="/api/v1/loan/agreement",
+    prefix="/loan/agreement",
     tags=["Agreement"]
 )
 
@@ -23,32 +26,46 @@ def get_agreement_service() -> AgreementService:
     return AgreementService(pdf=pdf, loan_client=loan_client)
 
 
-# Get agreement (generate if not exists)
+# ------------------------------------------------
+# GET AGREEMENT (USER + ADMIN)
+# ------------------------------------------------
 @router.get("/{loan_id}", response_model=AgreementResponse)
 def get_agreement(
-    loan_id: int = Path(..., gt=0, description="Loan ID"),
+    loan_id: int = Path(..., gt=0),
     db: Session = Depends(get_db),
     service: AgreementService = Depends(get_agreement_service),
+
+    # ✅ ROLE CHECK
+    current_user=Depends(user_required)
 ):
     return service.fetch_agreement(loan_id, db)
 
+
 # ------------------------------------------------
-# PDF VIEWER (NEW)
+# VIEW AGREEMENT PDF (USER + ADMIN)
 # ------------------------------------------------
 @router.get("/{loan_id}/view")
 def view_agreement(
-    loan_id: int = Path(..., gt=0, description="Loan ID"),
+    loan_id: int = Path(..., gt=0),
     db: Session = Depends(get_db),
     service: AgreementService = Depends(get_agreement_service),
+
+    # ✅ ROLE CHECK
+    current_user=Depends(user_required)
 ):
     return service.get_agreement_view(loan_id, db)
 
 
-# Verify agreement hash
+# ------------------------------------------------
+# VERIFY HASH (ADMIN ONLY)
+# ------------------------------------------------
 @router.get("/{loan_id}/hash")
 def verify_hash(
-    loan_id: int = Path(..., gt=0, description="Loan ID"),
+    loan_id: int = Path(..., gt=0),
     db: Session = Depends(get_db),
     service: AgreementService = Depends(get_agreement_service),
+
+    # ✅ RESTRICTED ACCESS
+    current_user=Depends(user_required)
 ):
     return service.verify_hash(loan_id, db)

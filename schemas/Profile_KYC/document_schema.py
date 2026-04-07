@@ -1,39 +1,34 @@
 from pydantic import BaseModel
 from typing import Optional, List
+from enum import Enum
  
- 
-class DocumentTypeEnum(str):
-    AADHAAR_FRONT  = "AADHAAR_FRONT"
-    AADHAAR_BACK   = "AADHAAR_BACK"
-    PAN_CARD       = "PAN_CARD"
+class IncomeTypeEnum(str, Enum):
     SALARY_SLIP    = "SALARY_SLIP"
     BANK_STATEMENT = "BANK_STATEMENT"
- 
- 
-class DocumentStatusEnum(str):
+
+class DocumentStatusEnum(str, Enum):
     UPLOADED     = "UPLOADED"
     UNDER_REVIEW = "UNDER_REVIEW"
-    VERIFIED     = "VERIFIED"
     APPROVED     = "APPROVED"
     REJECTED     = "REJECTED"
  
-class BulkDocumentUploadResult(BaseModel):
+class SingleDocumentResult(BaseModel):
     document_type: str
     file_name:     str
-    success:       bool
-    id:            Optional[int]   = None
-    file_size:     Optional[int]   = None
-    status:        Optional[str]   = None
-    uploaded_at:   Optional[str]   = None
+    file_size:     int
+    status:        str
+    uploaded_at:   str
     message:       str
  
- 
 class BulkDocumentUploadResponse(BaseModel):
-    total_submitted: int
-    total_success:   int
-    total_failed:    int
-    results:         List[BulkDocumentUploadResult]
- 
+    user_id:               int
+    email:                 str
+    uploaded_documents:    List[SingleDocumentResult]
+    total_uploaded:        int
+    skipped_documents:     List[str]
+    missing_documents:     List[str]
+    all_required_uploaded: bool
+    message:               str
  
 class DocumentListItem(BaseModel):
     id:                    int
@@ -42,10 +37,6 @@ class DocumentListItem(BaseModel):
     file_size:             int
     status:                str
     uploaded_at:           str
-    extracted_name:        Optional[str]   = None
-    extracted_id_number:   Optional[str]   = None
-    name_match_percentage: Optional[float] = None
-    verified_at:           Optional[str]   = None
     reviewed_at:           Optional[str]   = None
     admin_remarks:         Optional[str]   = None
  
@@ -59,13 +50,41 @@ class AllDocumentsResponse(BaseModel):
     missing_documents:  List[str]
     all_approved:       bool
  
+class DocumentApprovalRequest(BaseModel):
+    document_id:   int
+    status:        DocumentStatusEnum
+    admin_remarks: Optional[str] = None
+ 
+class DocumentApprovalResponse(BaseModel):
+    message:         str
+    document_id:     int
+    new_status:      str
+    user_email:      str
+    user_kyc_status: str
+
+class PendingDocumentItem(BaseModel):
+    id:            int
+    user_id:       int
+    email:         str
+    full_name:     str
+    document_type: str
+    file_name:     str
+    file_path:     str
+    file_size:     int
+    uploaded_at:   str
+    status:        str
+
+
+class PendingDocumentsResponse(BaseModel):
+    pending_documents: List[PendingDocumentItem]
+    total_pending:     int
+
+
 class DocumentReviewRequest(BaseModel):
     document_id:   int
-    action:        str           # "APPROVE" or "REJECT"
+    action:        str              # "APPROVE" or "REJECT"
     admin_remarks: Optional[str] = None
-    reviewed_by:   str
- 
- 
+
 class DocumentReviewResponse(BaseModel):
     document_id:   int
     document_type: str
@@ -73,7 +92,7 @@ class DocumentReviewResponse(BaseModel):
     status:        str
     message:       str
     kyc_completed: bool = False
- 
+
  
 class UserKYCDetails(BaseModel):
     user_id:             int
@@ -84,7 +103,6 @@ class UserKYCDetails(BaseModel):
     pan_status:          str
     aadhaar_status:      str
     bank_status:         str
-    identity_status:     str
     document_status:     str
     kyc_status:          str
     created_at:          str

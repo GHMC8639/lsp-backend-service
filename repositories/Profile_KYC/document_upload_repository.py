@@ -49,7 +49,15 @@ class DocumentUploadRepository:
     @staticmethod
     def count_by_status(db: Session, status: DocumentStatus) -> int:
         return db.query(DocumentUpload).filter(DocumentUpload.status == status).count()
-
+    
+    @staticmethod
+    def get_pending_documents(db: Session) -> List[DocumentUpload]:
+        return (
+            db.query(DocumentUpload)
+            .filter(DocumentUpload.status == DocumentStatus.UPLOADED)
+            .all()
+        )
+        
     @staticmethod
     def get_rejected_documents_before_date(db: Session, cutoff_date: datetime) -> List[DocumentUpload]:
         return db.query(DocumentUpload).filter(

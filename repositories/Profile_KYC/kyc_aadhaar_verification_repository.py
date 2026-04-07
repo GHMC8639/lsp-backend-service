@@ -6,19 +6,31 @@ from models.Profile_KYC.kyc_aadhaar_verification import KYCAadhaarVerification
 class KYCAadhaarVerificationRepository:
 
     @staticmethod
-    def create_verification_log(db, user_id, aadhaar_number, dob_submitted,
-                                verified_dob, dob_match, status, failure_reason, attempt_number):
+    def create_verification_log(
+        db: Session,
+        user_id: int,
+        aadhaar_number: str,
+        dob_submitted: str,
+        verified_dob: str,
+        dob_match: bool,
+        status: str,
+        failure_reason: Optional[str],
+        attempt_number: int,
+    ) -> KYCAadhaarVerification:
+        now = datetime.now(timezone.utc)
         log = KYCAadhaarVerification(
-            user_id=user_id,
-            aadhaar_number=aadhaar_number,
-            dob_submitted=dob_submitted,
-            verified_dob=verified_dob,
-            dob_match=dob_match,
-            status=status,
-            failure_reason=failure_reason,
-            attempt_number=attempt_number,
-            created_at=datetime.now(timezone.utc),
+            user_id        = user_id,
+            aadhaar_number = aadhaar_number,
+            dob_submitted  = dob_submitted,
+            verified_dob   = verified_dob,
+            dob_match      = dob_match,
+            status         = status,
+            failure_reason = failure_reason,
+            attempt_number = attempt_number,
+            created_at     = now,
+            verified_at    = now if status == "VERIFIED" else None,  # only set on success
         )
+
         db.add(log)
         db.commit()
         return log
@@ -54,7 +66,7 @@ class KYCAadhaarVerificationRepository:
 
     @staticmethod
     def delete_failed_verifications(db: Session, cutoff_date: datetime) -> int:
-        return (
+        count = (
             db.query(KYCAadhaarVerification)
             .filter(
                 KYCAadhaarVerification.status.in_(["FAILED", "BLOCKED"]),
@@ -62,3 +74,5 @@ class KYCAadhaarVerificationRepository:
             )
             .delete(synchronize_session=False)
         )
+        db.commit()
+        return count

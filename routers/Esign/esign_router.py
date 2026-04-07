@@ -15,23 +15,30 @@ from utils.response import success_response
 from core.exceptions import throw_error
 from core.logger import logger
 
+# ✅ ADD THIS
+from core.permissions import user_required
+
 router = APIRouter(
-    prefix="/api/v1/loan/esign",
+    prefix="/loan/esign",
     tags=["E-Sign"]
 )
 
 
-# Dependency Injection
 def get_esign_service() -> EsignService:
     return EsignService()
 
 
-# Initiate eSign (Send OTP)
+# ------------------------------------------------
+# INITIATE ESIGN (USER + ADMIN)
+# ------------------------------------------------
 @router.post("/initiate")
 async def initiate_esign(
     request_data: InitiateRequest,
     db: Session = Depends(get_db),
     service: EsignService = Depends(get_esign_service),
+
+    # ✅ ROLE CHECK
+    current_user=Depends(user_required)
 ):
     logger.info(f"E-Sign initiate request for loan_id={request_data.loan_id}")
 
@@ -39,12 +46,17 @@ async def initiate_esign(
     return success_response(result)
 
 
-# Verify OTP
+# ------------------------------------------------
+# VERIFY OTP (USER + ADMIN)
+# ------------------------------------------------
 @router.post("/verify")
 async def verify_esign(
     request_data: VerifyRequest,
     db: Session = Depends(get_db),
     service: EsignService = Depends(get_esign_service),
+
+    # ✅ ROLE CHECK
+    current_user=Depends(user_required)
 ):
     logger.info(f"E-Sign verify request for txn={request_data.transaction_id}")
 
@@ -52,7 +64,9 @@ async def verify_esign(
     return success_response(result)
 
 
-# Provider Callback
+# ------------------------------------------------
+# PROVIDER CALLBACK (NO USER AUTH)
+# ------------------------------------------------
 @router.post("/callback")
 async def esign_callback(
     request: Request,

@@ -1,24 +1,60 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
-from core.database import SessionLocal
-from schemas.Tracking.reupload_schema import DocumentReuploadRequest
+
+from core.database import get_db
+
 from services.Tracking.reupload_service import ReuploadService
+from schemas.Tracking.reupload_schema import DocumentReuploadRequest
 
-router = APIRouter(prefix="/api/v1/loan", tags=["Document Reupload"])
+# ✅ USE RBAC
+from core.permissions import user_required
+from models.Auth.user import User
 
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+# ✅ OPTIONAL (if you want ownership check here)
+from models.Loan_application.loan_application import LoanApplication
+
+
+router = APIRouter(
+    prefix="/loan",
+    tags=["Document Reupload"]
+)
+
 
 @router.post("/application/{application_id}/reupload")
-def reupload(application_id: str, payload: DocumentReuploadRequest, db: Session = Depends(get_db)):
-    return ReuploadService.reupload_document(
+def reupload_document(
+    application_id: int,
+    payload: DocumentReuploadRequest,
+    db: Session = Depends(get_db),
+
+    # ✅ RBAC
+    current_user: User = Depends(user_required)
+):
+    """
+    Allows user to reupload rejected document
+    """
+
+    # ------------------------------------------------
+    # 🔐 OWNERSHIP CHECK (VERY IMPORTANT)
+    # ------------------------------------------------
+    application = db.query(LoanApplication).filter(
+        LoanApplication.id == application_id
+    ).first()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # ✅ USER → only own application
+    if current_user.role == "USER" and application.user_profile_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    # ------------------------------------------------
+    # PROCESS REUPLOAD
+    # ------------------------------------------------
+    return ReuploadService.submit_reupload(
         db=db,
         application_id=application_id,
+        user_id=current_user.id,
         document_type=payload.document_type,
-        reason=payload.reason,
-        comments=payload.comments
+        new_document_url=payload.new_document_url,
+        rejection_reason=payload.rejection_reason
     )

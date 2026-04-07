@@ -1,4 +1,3 @@
-import logging
 from datetime import datetime, timezone, timedelta
 from sqlalchemy.orm import Session
 from fastapi import HTTPException
@@ -7,11 +6,9 @@ from models.Profile_KYC.user_profile import UserProfile
 from repositories.Profile_KYC.user_repository import UserRepository
 from repositories.Profile_KYC.attempt_tracker_repository import AttemptTrackerRepository
 from repositories.Profile_KYC.kyc_bank_verification_repository import KYCBankVerificationRepository
-from providers.bank_provider import get_bank_provider
+from repositories.Profile_KYC.dummy_bank_account_repository import DummyBankAccountRepository
+from utils.name_matcher import name_match_percentage
 from core.config import settings
-
-logger = logging.getLogger(__name__)
-
 
 class BankVerificationService:
 
@@ -26,103 +23,90 @@ class BankVerificationService:
     ) -> dict:
         if user.bank_status == "VERIFIED":
             raise HTTPException(400, "Bank account already verified")
-        existing = KYCBankVerificationRepository.get_verified_by_account_number(db, account_number)
-        if existing and existing.user_id != user.user_id:
+        existing_verified_bank = KYCBankVerificationRepository.get_verified_by_account_number(db, account_number)
+        if existing_verified_bank:
             raise HTTPException(409, "This bank account is already linked to another user")
 
+        tracker = AttemptTrackerRepository.get_by_email_and_type(db, user.email, VerificationType.BANK)
+        if not tracker:
+            tracker = AttemptTrackerRepository.create_tracker(db, user.email, VerificationType.BANK)
         now = datetime.now(timezone.utc)
-        tracker = AttemptTrackerRepository.get_or_create(db, user.email, VerificationType.BANK)
+    
 
-        if tracker.locked_until:
-            locked_until = tracker.locked_until
-            if locked_until.tzinfo is None:
-                locked_until = locked_until.replace(tzinfo=timezone.utc)
-            if locked_until > now:
-                raise HTTPException(
-                    423,
-                    f"Bank verification blocked. Try after {settings.BANK_COOLDOWN_HOURS} hours.",
-                )
+        if tracker.locked_until and tracker.locked_until > now:
+            raise HTTPException(423, f"Bank verification blocked. Try after {settings.BANK_COOLDOWN_HOURS} hours.")
+
+        if tracker.locked_until and tracker.locked_until <= now:
             AttemptTrackerRepository.reset_attempts(db, tracker)
 
         current_attempt = AttemptTrackerRepository.increment_attempt(db, tracker)
 
-        if current_attempt > settings.BANK_MAX_ATTEMPTS:
-            AttemptTrackerRepository.lock_tracker(
-                db, tracker, now + timedelta(hours=settings.BANK_COOLDOWN_HOURS)
-            )
-            raise HTTPException(
-                423,
-                f"Maximum attempts ({settings.BANK_MAX_ATTEMPTS}) exceeded. "
-                f"Try after {settings.BANK_COOLDOWN_HOURS} hours.",
-            )
+        bank_account   = DummyBankAccountRepository.get_by_account_number(db, account_number)
+        failure_reason = None
+        match_pct      = 0.0
 
-        provider = get_bank_provider()
-        try:
-            result = provider.verify(
-                db=db,
-                account_number=account_number,
-                account_holder_name=account_holder_name,
-                bank_name=bank_name,
-                ifsc=ifsc,
-            )
-        except RuntimeError as e:
-            AttemptTrackerRepository.decrement_attempt(db, tracker)
-            raise HTTPException(503, str(e))
+        if not bank_account:
+            failure_reason = "Bank account number not found in records"
+        elif bank_account.ifsc.upper() != ifsc.upper():
+            failure_reason = "IFSC code does not match bank records"
+        elif bank_account.bank_name.upper().strip() != bank_name.upper().strip():
+            failure_reason = "Bank name does not match records"
+        elif not bank_account.is_active:
+            failure_reason = "Bank account is inactive or closed - please use an active account"
+        else:
+            match_pct = name_match_percentage(account_holder_name, bank_account.account_holder_name)
+            if match_pct < settings.NAME_MATCH_THRESHOLD:
+                failure_reason = "Account holder name does not match bank records"
 
-        verified_name = result.get("verified_name") or ""
-        match_pct     = result.get("name_match_percentage", 0.0)
-        if not result["success"]:
+        if failure_reason:
             if current_attempt >= settings.BANK_MAX_ATTEMPTS:
-                status = "BLOCKED"
+                status           = "BLOCKED"
+                user.bank_status = "BLOCKED"
                 AttemptTrackerRepository.lock_tracker(
                     db, tracker, now + timedelta(hours=settings.BANK_COOLDOWN_HOURS)
                 )
-                user.bank_status = "BLOCKED"
             else:
-                status = "FAILED"
+                status           = "FAILED"
                 user.bank_status = "FAILED"
 
             KYCBankVerificationRepository.create_verification_log(
-                db=db,
-                user_id=user.user_id,
-                account_number=account_number,
-                account_holder_name=account_holder_name,
-                bank_name=bank_name,
-                ifsc=ifsc,
-                name_match_percentage=match_pct,
-                status=status,
-                failure_reason=result["failure_reason"],
-                attempt_number=current_attempt,
+                db                    = db,
+                user_id               = user.user_id,
+                account_number        = account_number,
+                account_holder_name   = account_holder_name,
+                bank_name             = bank_name,
+                ifsc                  = ifsc,
+                name_match_percentage = match_pct,
+                status                = status,
+                failure_reason        = failure_reason,
+                attempt_number        = current_attempt,
             )
-            UserRepository.save(db)
+            UserRepository.save(db) 
 
             remaining = settings.BANK_MAX_ATTEMPTS - current_attempt
-            http_code = 423 if status == "BLOCKED" else 400
-            suffix = (f"{remaining} attempt(s) remaining."
-                      if remaining > 0
-                      else f"Blocked for {settings.BANK_COOLDOWN_HOURS} hours.")
-            raise HTTPException(http_code, f"{result['failure_reason']}. {suffix}")
+            if remaining > 0:
+                raise HTTPException(400, f"{failure_reason}. {remaining} attempt(s) remaining.")
+            raise HTTPException(423, f"{failure_reason}. Maximum attempts reached. Blocked for {settings.BANK_COOLDOWN_HOURS} hours.")
 
-        user.bank_status     = "VERIFIED"
-        user.bank_locked     = True
+    
+        user.bank_status      = "VERIFIED"
+        user.bank_locked      = True
         user.bank_verified_at = now
 
         KYCBankVerificationRepository.create_verification_log(
-            db=db,
-            user_id=user.user_id,
-            account_number=account_number,
-            account_holder_name=account_holder_name,
-            bank_name=bank_name,
-            ifsc=ifsc,
-            name_match_percentage=match_pct,
-            status="VERIFIED",
-            failure_reason=None,
-            attempt_number=current_attempt,
+            db                    = db,
+            user_id               = user.user_id,
+            account_number        = account_number,
+            account_holder_name   = account_holder_name,
+            bank_name             = bank_name,
+            ifsc                  = ifsc,
+            name_match_percentage = match_pct,
+            status                = "VERIFIED",
+            failure_reason        = None,
+            attempt_number        = current_attempt,
         )
         AttemptTrackerRepository.reset_attempts(db, tracker)
         UserRepository.update_user(db, user)
-
-        logger.info(f"Bank verified for user {user.user_id} (mode={settings.VERIFICATION_MODE})")
 
         return {
             "bank_status": "VERIFIED",

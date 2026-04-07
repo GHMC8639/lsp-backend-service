@@ -1,51 +1,95 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from core.dependencies import get_current_user
+from services.Tracking.tracking_service import TrackingService
+
+from schemas.Tracking.loan_status_schema import LoanStatusResponse
+from schemas.Tracking.loan_timeline_schema import LoanStatusHistoryItem
+from schemas.Loan_application.loan_application import LoanApplicationBase
+
+# ✅ USE RBAC
+from core.permissions import user_required
 from models.Auth.user import User
 
-from services.Tracking.tracking_service import TrackingService
-from schemas.Tracking.tracking_schema import CreateTrackingRequest              
-
-router = APIRouter(prefix="/loan", tags=["Loan Tracking"])
+# ✅ For ownership check
+from models.Loan_application.loan_application import LoanApplication
 
 
-@router.get("/applications")
-def list_applications(
+router = APIRouter(
+    prefix="/loan",
+    tags=["Loan Tracking"]
+)
+
+
+# ------------------------------------------------
+# GET USER APPLICATIONS
+# ------------------------------------------------
+@router.get("/applications", response_model=list[LoanApplicationBase])
+def get_user_applications(
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(user_required)
 ):
-    return TrackingService.list_applications(db, current_user.id)
+    # ✅ ADMIN → see all
+    if current_user.role in ["ADMIN", "SUPER_ADMIN"]:
+        return TrackingService.get_all_applications(db)
 
-
-@router.get("/application/{application_id}/status")
-def get_status(
-    application_id: str,
-    db: Session = Depends(get_db),
-):
-    return TrackingService.get_current_status(db, application_id)
-
-
-@router.get("/application/{application_id}/timeline")
-def get_timeline(
-    application_id: str,
-    db: Session = Depends(get_db),
-):
-    return TrackingService.get_timeline(db, application_id)
-
-
-@router.post("/application")
-def create_tracking(
-    request: CreateTrackingRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_user),
-):
-
-    return TrackingService.create_tracking_entry(
+    # ✅ USER → only own
+    return TrackingService.get_user_applications(
         db=db,
-        user_id=current_user.id,  # from JWT token
-        loan_origination_id=request.loan_origination_id,
-        loan_amount=request.loan_amount,
-        tenure=request.tenure_months,
+        user_id=current_user.id
+    )
+
+
+# ------------------------------------------------
+# GET APPLICATION STATUS
+# ------------------------------------------------
+@router.get("/application/{application_id}/status", response_model=LoanStatusResponse)
+def get_application_status(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(user_required)
+):
+    application = db.query(LoanApplication).filter(
+        LoanApplication.id == application_id
+    ).first()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # ✅ USER → only own application
+    if current_user.role == "USER" and application.user_profile_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return TrackingService.get_application_status(
+        db=db,
+        application_id=application_id,
+        user_id=current_user.id
+    )
+
+
+# ------------------------------------------------
+# GET APPLICATION TIMELINE
+# ------------------------------------------------
+@router.get("/application/{application_id}/timeline", response_model=list[LoanStatusHistoryItem])
+def get_application_timeline(
+    application_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(user_required)
+):
+    application = db.query(LoanApplication).filter(
+        LoanApplication.id == application_id
+    ).first()
+
+    if not application:
+        raise HTTPException(status_code=404, detail="Application not found")
+
+    # ✅ USER → only own
+    if current_user.role == "USER" and application.user_profile_id != current_user.id:
+        raise HTTPException(status_code=403, detail="Access denied")
+
+    return TrackingService.get_application_timeline(
+        db=db,
+        application_id=application_id,
+        user_id=current_user.id
     )

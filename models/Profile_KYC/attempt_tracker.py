@@ -14,10 +14,16 @@ class AttemptTracker(Base):
     email = Column(String(120), nullable=False, index=True)
     verification_type = Column(SQLEnum(VerificationType), nullable=False, index=True)
     attempts_count = Column(Integer, nullable=False, default=0)
-    locked_until = Column(DateTime, nullable=True)
-    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    first_attempt_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-    last_attempt_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),onupdate=lambda: datetime.now(timezone.utc))
+    locked_until      = Column(DateTime(timezone=True), nullable=True)
+    created_at        = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    first_attempt_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    last_attempt_at   = Column(
+        DateTime(timezone=True),
+        default=lambda: datetime.now(timezone.utc),
+        onupdate=lambda: datetime.now(timezone.utc),
+        nullable=False,
+    )
+
 
     __table_args__ = (
         UniqueConstraint( "email","verification_type",name="uq_email_verification_type"),

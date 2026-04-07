@@ -18,7 +18,6 @@ class KYCPANVerification(Base):
     attempt_number= Column(Integer,     nullable=False)
     created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), index=True, nullable=False)
 
-    # FIX: relationship INSIDE the class (was outside, caused crash)
     user = relationship("UserProfile", back_populates="pan_verifications")
 
     __table_args__ = (

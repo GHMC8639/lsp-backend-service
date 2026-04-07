@@ -1,20 +1,20 @@
+# app/schemas/loan_timeline_schema.py
+
 from pydantic import BaseModel
-from typing import List
+from typing import Optional, List
 from datetime import datetime
 
-
-class StatusStep(BaseModel):
-    status: str
-    completed: bool
-    timestamp: datetime | None
-
-    class Config:
-        from_attributes = True
-
-
-class FullTimelineResponse(BaseModel):
-    application_id: str
-    steps: List[StatusStep]
+class LoanStatusHistoryItem(BaseModel):
+    id: int
+    old_status: Optional[str]
+    new_status: str
+    comment: Optional[str]
+    created_at: datetime
 
     class Config:
         from_attributes = True
+
+
+class LoanTimelineResponse(BaseModel):
+    application_id: int
+    timeline: List[LoanStatusHistoryItem]

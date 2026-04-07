@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime
-from app.core.enums import LoanApplicationStep
+from core.enums import LoanApplicationStep
 
 
 class LoanApplicationStepCreate(BaseModel):
