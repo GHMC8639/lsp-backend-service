@@ -10,15 +10,9 @@ from schemas.Profile_KYC.aadhaar_schema import AadhaarVerificationRequest, Aadha
 router = APIRouter(prefix="/kyc",tags=["Aadhaar Verification"])
 
 @router.post("/aadhaar_verify", response_model=AadhaarVerificationResponse)
-def verify_aadhaar(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("USER"))
-):
+def verify_aadhaar( db: Session = Depends(get_db), current_user: User = Depends(require_roles("USER"))):
     try:
-        result = AadhaarVerificationService.verify_aadhaar(
-            db=db,
-            user_id=current_user.id,   # 🔥 comes from JWT
-        )
+        result = AadhaarVerificationService.verify_aadhaar( db=db, user_id=current_user.id)
         return AadhaarVerificationResponse(**result)
 
     except HTTPException:

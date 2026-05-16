@@ -51,5 +51,5 @@ class LoanEligibility(Base):
     previously_checked_at = Column(DateTime, nullable=True)
     latest_checked_at     = Column(DateTime, default=datetime.utcnow, nullable=False)
     user = relationship("User", back_populates="loan_eligibilities")
-    loan_applications = relationship("LoanApplication",back_populates="eligibility",cascade="all, delete-orphan")
+    loan_application = relationship("LoanApplication", back_populates="eligibility", cascade="all, delete-orphan")
     credit_profile = relationship("CreditProfile",foreign_keys=[credit_profile_id],lazy="select")

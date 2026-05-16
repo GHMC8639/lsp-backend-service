@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.orm import Session
 
-from core.session import get_db
+from core.database import get_db
 from core.dependencies import require_roles
 from models.Auth.user import User
 
@@ -28,15 +28,14 @@ router = APIRouter(
                 "application/json": {
                     "example": {
                         "detail": {
-                            "pending_step": "DECLARATION",
-                            "message": "Declaration not completed"
+                            "pending_step": "DECLARATION"
                         }
                     }
                 }
             },
         },
         404: {
-            "description": "No active draft found"
+            "description": "No loan application found"
         }
     }
 )
@@ -45,11 +44,27 @@ def get_application_summary(
     current_user: User = Depends(require_roles("USER")),
 ):
     """
-    Rules:
-    - All mandatory steps must be completed
-    - If any step is pending, API returns which step is missing
-    - Summary is shown only after DECLARATION is completed
-    - Application is auto-detected for logged-in user
+    Loan Application Summary
+
+    ✅ Conditions:
+    - Lender must already be selected
+    - Interest rate must be available
+    - Tenure must be selected
+    - All steps must be completed
+
+    ❌ If any step missing:
+        → returns { "pending_step": "<STEP_NAME>" }
+
+    📌 Summary includes:
+    - User details
+    - Loan details (amount, EMI, interest, lender)
+    - Charges
+    - References
+    - Final submission readiness
+
+    ⚠️ Works for:
+    - Draft applications
+    - Submitted applications
     """
     return LoanApplicationSummaryService.get_summary_by_user(
         db=db,

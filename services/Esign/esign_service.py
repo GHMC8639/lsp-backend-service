@@ -1,17 +1,17 @@
 from sqlalchemy.orm import Session
 from sqlalchemy.exc import IntegrityError
-import httpx
 
 from models.Esign.esign_session import EsignSession, EsignStatus
-from models.Esign.audit_logs import EsignAuditLog
 from models.Esign.signed_documents import SignedDocument
 from models.Esign.agreements import Agreement
+from models.Loan_application.loan_application import LoanApplication
+from models.Profile_KYC.user_profile import UserProfile
 
 from providers.factory import get_esign_provider
 
 from core.exceptions import throw_error
 from core.logger import logger
-from core.config import settings
+from core.enums import PaymentModeEnum
 
 from utils.file_handler import FileHandler
 
@@ -21,233 +21,234 @@ class EsignService:
     def __init__(self):
         self.file_handler = FileHandler()
 
-    # INITIATE E-SIGN
-    async def initiate_esign(self, data, db: Session):
+    # =====================================================
+    # 🔐 INITIATE E-SIGN
+    # =====================================================
+    async def initiate_esign(self, db: Session, user_id: int):
 
-        logger.info(f"[E-SIGN INIT] loan_id={data.loan_id}")
+        logger.info(f"[E-SIGN INIT] user_id={user_id}")
+
+        # ✅ FIX: proper join
+        loan = db.query(LoanApplication).join(UserProfile).filter(
+            UserProfile.user_id == user_id,
+            LoanApplication.application_status.in_(["APPROVED", "AGREEMENT_GENERATED"])
+        ).order_by(LoanApplication.id.desc()).first()
+
+        if not loan:
+            throw_error("No valid loan found for eSign", 404)
+
+        if not loan.user_profile or not getattr(loan.user_profile, "aadhaar_number", None):
+            throw_error("Aadhaar not available", 400)
+
+        aadhaar_number = loan.user_profile.aadhaar_number
+
+        existing = db.query(EsignSession).filter(
+            EsignSession.application_id == loan.id,
+            EsignSession.status == EsignStatus.OTP_SENT
+        ).first()
+
+        if existing:
+            return {
+                "transaction_id": existing.transaction_id,
+                "message": "eSign already initiated"
+            }
+
+        agreement_id = self._get_active_agreement_id(db, loan.id)
 
         provider = get_esign_provider()
-        payload = data.model_dump()
+
+        payload = {
+            "loan_id": loan.id,
+            "aadhaar_number": aadhaar_number
+        }
 
         try:
             provider_resp = await provider.initiate_esign(payload)
         except Exception as exc:
-            logger.error(f"[E-SIGN INIT] Provider error: {exc}")
+            logger.error(f"[E-SIGN INIT ERROR]: {str(exc)}")
             throw_error("eSign provider unreachable", 503)
 
-        txn = provider_resp.get("transaction_id")
+        txn = provider_resp.get("transaction_id") or provider_resp.get("txn_id")
 
         if not txn:
             throw_error("Invalid provider response", 502)
 
-        session = EsignSession(
-            loan_id=data.loan_id,
-            user_id=1,  # TODO: replace after auth integration
-            transaction_id=txn,
-            request_payload=payload,
-            response_payload=provider_resp,
-            status=EsignStatus.OTP_SENT
-        )
-
-        log = EsignAuditLog(
-            session_id=None,
-            event_type="OTP_SENT",
-            event_description=f"OTP sent for txn={txn}"
-        )
-
         try:
+            session = EsignSession(
+                application_id=loan.id,
+                agreement_id=agreement_id,
+                user_id=user_id,
+                transaction_id=txn,
+                request_payload=payload,
+                response_payload=provider_resp,
+                status=EsignStatus.OTP_SENT
+            )
+
             db.add(session)
-            db.flush()  # get session.id
-
-            log.session_id = session.id
-            db.add(log)
-
             db.commit()
 
         except IntegrityError:
             db.rollback()
-            throw_error("Duplicate transaction id", 409)
-
+            throw_error("Duplicate transaction", 409)
 
         return {
             "transaction_id": txn,
             "masked_aadhaar": provider_resp.get("masked_aadhaar")
         }
-      
 
-    # VERIFY OTP
+    # =====================================================
+    # 🔐 VERIFY OTP
+    # =====================================================
     async def verify_esign(self, data, db: Session):
-
-        logger.info(f"[E-SIGN VERIFY] txn={data.transaction_id}")
-
-        provider = get_esign_provider()
 
         session = db.query(EsignSession).filter(
             EsignSession.transaction_id == data.transaction_id
-        ).first()
+        ).with_for_update().first()
 
         if not session:
             throw_error("Invalid transaction ID", 404)
 
         if session.status == EsignStatus.SIGNED:
-            return {"transaction_id": session.transaction_id, "status": "SIGNED"}
+            return {"status": "SIGNED"}
 
-        if session.status != EsignStatus.OTP_SENT:
-            throw_error("Invalid signing state", 400)
+        existing_signed = db.query(EsignSession).filter(
+            EsignSession.agreement_id == session.agreement_id,
+            EsignSession.status == EsignStatus.SIGNED
+        ).with_for_update().first()
+
+        if existing_signed:
+            return {"status": "SIGNED", "message": "Already signed"}
+
+        provider = get_esign_provider()
 
         try:
             provider_resp = await provider.verify_esign(data.model_dump())
         except Exception as exc:
-            logger.error(f"[E-SIGN VERIFY] Provider error: {exc}")
+            logger.error(f"[VERIFY ERROR]: {str(exc)}")
             throw_error("OTP verification failed", 503)
 
         if provider_resp.get("status") != "SIGNED":
-
-            log = EsignAuditLog(
-                session_id=session.id,
-                event_type="OTP_FAILED",
-                event_description="OTP verification failed"
-            )
-
-            db.add(log)
-            db.commit()
-
             throw_error("Invalid OTP", 400)
 
-        session.status = EsignStatus.OTP_SENT
+        session.status = EsignStatus.SIGNED
 
-        log = EsignAuditLog(
-            session_id=session.id,
-            event_type="SIGNED",
-            event_description="OTP verified successfully"
-        )
+        # 🔥 Update agreement + loan
+        agreement = db.query(Agreement).filter(
+            Agreement.id == session.agreement_id
+        ).with_for_update().first()
 
-        db.add(log)
+        if agreement:
+            agreement.esign_status = "SIGNED"
+
+        loan = db.query(LoanApplication).filter(
+            LoanApplication.id == session.application_id
+        ).with_for_update().first()
+
+        if loan:
+            loan.application_status = "ESIGN_COMPLETED"
+
         db.commit()
 
-        return {
-            "transaction_id": session.transaction_id,
-            "status": "SIGNED"
-        }
+        return {"status": "SIGNED"}
 
-    # CALLBACK HANDLER
+    # =====================================================
+    # 🔥 CALLBACK HANDLER
+    # =====================================================
     async def handle_callback(self, data, db: Session):
 
         logger.info(f"[CALLBACK] txn={data.transaction_id}")
 
-        # ------------------------------------------------
-        # FETCH SESSION
-        # ------------------------------------------------
-        session = db.query(EsignSession).filter(
-            EsignSession.transaction_id == data.transaction_id
-        ).first()
+        try:
+            session = db.query(EsignSession).filter(
+                EsignSession.transaction_id == data.transaction_id
+            ).with_for_update().first()
 
-        if not session:
-            throw_error("Unknown transaction ID", 404)
+            if not session:
+                throw_error("Unknown transaction ID", 404)
 
-        # ------------------------------------------------
-        # IDEMPOTENCY CHECK
-        # ------------------------------------------------
-        if session.status == EsignStatus.SIGNED:
-            logger.info("[CALLBACK] already processed")
-            return {"status": "already_processed"}
+            if session.status == EsignStatus.SIGNED:
+                return {"status": "already_processed"}
 
-        # ------------------------------------------------
-        # FAILURE CASE
-        # ------------------------------------------------
-        if data.status != "SIGNED":
-            session.status = EsignStatus.FAILED
-            db.commit()
-            db.refresh(session)
-            throw_error("Callback status FAILED", 400)
+            if data.status != "SIGNED":
+                session.status = EsignStatus.FAILED
+                db.commit()
+                throw_error("Signing failed", 400)
 
-        signed_url = data.signed_pdf_url
+            if not data.signed_pdf_url:
+                throw_error("Signed PDF URL missing", 400)
 
-        # ------------------------------------------------
-        # DOWNLOAD / GENERATE SIGNED PDF
-        # ------------------------------------------------
-        if signed_url == "LOCAL":
-
-            # Create mock PDF content
-            content = b"%PDF-1.4 mock signed document"
-
-            file_path, file_hash = await self.file_handler.save_signed_pdf_async(
-                content=content,
+            file_path, file_hash = await self.file_handler.download_and_save_pdf_async(
+                url=data.signed_pdf_url,
                 txn=session.transaction_id
             )
 
-        else:
+            db.add(SignedDocument(
+                session_id=session.id,
+                agreement_id=session.agreement_id,
+                application_id=session.application_id,
+                signed_pdf_path=file_path,
+                file_hash=file_hash
+            ))
 
-            file_path, file_hash = await self.file_handler.download_and_save_pdf_async(
-                url=signed_url,
-                txn=session.transaction_id
+            session.status = EsignStatus.SIGNED
+            session.callback_payload = data.model_dump()
+
+            # 🔥 Update agreement
+            agreement = db.query(Agreement).filter(
+                Agreement.application_id == session.application_id,
+                Agreement.is_active == True
+            ).with_for_update().first()
+
+            if agreement:
+                agreement.esign_status = "SIGNED"
+                agreement.signed_pdf_path = file_path
+                agreement.file_hash = file_hash
+
+            # 🔥 Update loan
+            loan = db.query(LoanApplication).filter(
+                LoanApplication.id == session.application_id
+            ).with_for_update().first()
+
+            if loan:
+                loan.application_status = "ESIGN_COMPLETED"
+
+            db.commit()
+
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[CALLBACK ERROR] {str(e)}")
+            throw_error("Callback processing failed", 500)
+
+        # 🚀 Disbursement
+        try:
+            if loan and loan.application_status == "ESIGN_COMPLETED":
+                from services.Loan_application.loan_disbursement_service import LoanDisbursementService
+
+                LoanDisbursementService.disburse_loan(
+                    db,
+                    loan.id,
+                    PaymentModeEnum.BANK
                 )
+        except Exception as e:
+            logger.error(f"[DISBURSE ERROR] {str(e)}")
 
-        # ------------------------------------------------
-        # SAVE SIGNED DOCUMENT
-        # ------------------------------------------------
-        signed_doc = SignedDocument(
-            session_id=session.id,
-            signed_pdf_path=file_path,
-            file_hash=file_hash
-        )
+        return {
+            "status": "success",
+            "application_id": session.application_id,
+            "file_path": file_path
+        }
 
-        db.add(signed_doc)
+    # =====================================================
+    # 🔧 HELPER
+    # =====================================================
+    def _get_active_agreement_id(self, db: Session, application_id: int):
 
-        # ------------------------------------------------
-        # UPDATE SESSION
-        # ------------------------------------------------
-        session.status = EsignStatus.SIGNED
-        session.callback_payload = data.model_dump()
-        
-        # ------------------------------------------------
-        # UPDATE AGREEMENT (ADD HERE)
-        # ------------------------------------------------
         agreement = db.query(Agreement).filter(
-            Agreement.loan_id == session.loan_id,
+            Agreement.application_id == application_id,
             Agreement.is_active == True
         ).first()
 
-        if agreement:
-            agreement.status = "SIGNED"
+        if not agreement:
+            throw_error("Active agreement not found", 404)
 
-        # ------------------------------------------------
-        # AUDIT LOG
-        # ------------------------------------------------
-        log = EsignAuditLog(
-            session_id=session.id,
-            event_type="CALLBACK_RECEIVED",
-            event_description=f"Signed document stored: {file_path}"
-        )
-
-        db.add(log)
-
-        db.commit()
-        db.refresh(session)
-
-        # ------------------------------------------------
-        # 🚀 DISBURSEMENT TRIGGER (IMPORTANT)
-        # ------------------------------------------------
-        try:
-            from services.Esign.disbursement_service import DisbursementService
-            
-            disbursement_service = DisbursementService()
-
-            DisbursementService().confirm(session.loan_id, db)
-
-            logger.info(f"[DISBURSEMENT] Triggered for loan_id={session.loan_id}")
-            # ✅ STEP 7 — NOTIFICATION (ADD HERE)
-            print(f"[NOTIFICATION] Loan {session.loan_id} disbursed successfully")
-
-        except Exception as e:
-            # Do NOT fail callback if disbursement fails
-            logger.error(f"[DISBURSEMENT ERROR] {str(e)}")
-
-        # ------------------------------------------------
-        # RESPONSE
-        # ------------------------------------------------
-        return {
-            "status": "ok",
-            "file_path": file_path,
-            "loan_id": session.loan_id
-        }
+        return agreement.id

@@ -1,19 +1,12 @@
 from pydantic import BaseModel
 
 
-class FAQBase(BaseModel):
+class FAQResponse(BaseModel):
+    id: int
     category: str
     question: str
     answer: str
-
-
-class FAQCreate(FAQBase):
-    pass
-
-
-class FAQResponse(FAQBase):
-    id: int
+    is_active: bool
 
     class Config:
-        orm_mode = True
-
+        from_attributes = True

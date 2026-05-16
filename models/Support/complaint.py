@@ -1,30 +1,35 @@
-from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean
-from datetime import datetime
-from core.database import Base
-from sqlalchemy import BigInteger, ForeignKey
+from sqlalchemy import Column, Integer, String, Text, DateTime, Boolean, ForeignKey
 from sqlalchemy.orm import relationship
+from datetime import datetime, timedelta
+from core.database import Base
 
 
 class Complaint(Base):
     __tablename__ = "complaints"
-    id = Column(Integer, primary_key=True, index=True, autoincrement=True)
-    complaint_number = Column(String, unique=True, index=True)
-    user_id = Column(BigInteger, ForeignKey("users.id"), nullable=False)
-    category = Column(String, nullable=False)
+
+    id = Column(Integer, primary_key=True, index=True)
+    complaint_number = Column(String, unique=True, nullable=False, index=True)
+
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+
+    # Future cross-module integration support
+    application_id = Column(Integer, nullable=True, index=True)
+    loan_id = Column(Integer, nullable=True, index=True)
+
+    category = Column(String, nullable=False, index=True)
     subject = Column(String, nullable=False)
     description = Column(Text, nullable=False)
-    priority = Column(String, nullable=False)
+    priority = Column(String, nullable=False, default="Medium")  # Low / Medium / High
+    status = Column(String, nullable=False, default="Open")      # Open / In Progress / Resolved / Closed
+    attachment_url = Column(String, nullable=True)
 
-    status = Column(String, default="Open")  
-    # Open, In Progress, Resolved, Closed
-
-    sla_deadline = Column(DateTime)
     escalated = Column(Boolean, default=False)
+    resolution_notes = Column(Text, nullable=True)
+    assigned_to = Column(String, nullable=True)
 
+    sla_deadline = Column(DateTime, default=lambda: datetime.utcnow() + timedelta(days=30))
     created_at = Column(DateTime, default=datetime.utcnow)
-    updated_at = Column(DateTime, default=datetime.utcnow)
+    updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
 
-    user = relationship("User", back_populates="complaints") 
-
-
-   
+    user = relationship("User", back_populates="complaints")
+    history = relationship("ComplaintHistory", back_populates="complaint", cascade="all, delete-orphan")

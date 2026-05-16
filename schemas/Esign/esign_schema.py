@@ -2,15 +2,15 @@ from pydantic import BaseModel, Field, field_validator
 from typing import Optional
 
 
+# =====================================================
+# 🔐 INITIATE (NO INPUT FROM USER)
+# =====================================================
 class InitiateRequest(BaseModel):
-    loan_id: int
-    aadhar_number: str
-
-    @field_validator("aadhar_number")
-    def validate_aadhaar(cls, v):
-        if len(v) != 12 or not v.isdigit():
-            raise ValueError("Aadhaar must be a 12-digit number.")
-        return v
+    """
+    No input required.
+    Loan + Aadhaar will be fetched from DB using current_user
+    """
+    pass
 
 
 class InitiateResponse(BaseModel):
@@ -18,6 +18,9 @@ class InitiateResponse(BaseModel):
     masked_aadhaar: str
 
 
+# =====================================================
+# 🔐 VERIFY OTP
+# =====================================================
 class VerifyRequest(BaseModel):
     transaction_id: str
     otp: str = Field(..., min_length=6, max_length=6)
@@ -30,6 +33,6 @@ class VerifyRequest(BaseModel):
 
 
 class VerifyResponse(BaseModel):
-    signed_pdf: Optional[str]
-    file_hash: Optional[str]
+    signed_pdf: Optional[str] = None
+    file_hash: Optional[str] = None
     status: str

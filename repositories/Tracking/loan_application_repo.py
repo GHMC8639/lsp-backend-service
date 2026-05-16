@@ -20,7 +20,7 @@ class LoanApplicationRepository:
     def get_user_applications(db: Session, user_id: int):
         return (
             db.query(LoanApplication)
-            .filter(LoanApplication.user_id == user_id)
+            .filter(LoanApplication.user_profile_id == user_id)
             .order_by(desc(LoanApplication.id))
             .all()
         )
@@ -34,7 +34,11 @@ class LoanApplicationRepository:
         if not app:
             return None
 
-        app.application_status = new_status
+        app.application_status = (
+        new_status.value
+        if hasattr(new_status, "value")
+        else new_status
+        )
         db.commit()
         db.refresh(app)
         return app

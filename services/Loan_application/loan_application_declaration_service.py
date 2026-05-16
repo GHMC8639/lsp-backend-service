@@ -4,10 +4,43 @@ from datetime import datetime, timezone
 
 from models.Loan_application.loan_application import LoanApplication
 from models.Loan_application.loan_application_steps import LoanApplicationStepTracker
-from core.enums import LoanApplicationStep, enum_value
+from models.Profile_KYC.user_profile import UserProfile
+from models.Loan_application.loan_application_declaration import LoanApplicationDeclaration
+
+from core.enums import LoanApplicationStep, LoanApplicationStatus, enum_value
+
 from schemas.Loan_application.loan_application_declaration import (
     LoanApplicationDeclarationResponse
 )
+
+from services.Loan_application.loan_application_service import (
+    LoanApplicationService,
+)
+
+
+# =====================================================
+# HELPER
+# =====================================================
+def get_or_create_tracker(db: Session, application: LoanApplication):
+    tracker = db.query(LoanApplicationStepTracker).filter(
+        LoanApplicationStepTracker.application_id == application.id
+    ).first()
+
+    if not tracker:
+        tracker = LoanApplicationStepTracker(
+            application_id=application.id,
+            loan_details_completed=False,
+            purpose_completed=False,
+            references_completed=False,
+            declaration_completed=False,
+            current_step=enum_value(LoanApplicationStep.LOAN_DETAILS),
+            last_completed_step=None
+        )
+        db.add(tracker)
+        db.commit()
+        db.refresh(tracker)
+
+    return tracker
 
 
 class LoanApplicationDeclarationService:
@@ -21,10 +54,23 @@ class LoanApplicationDeclarationService:
         user_agent: str,
     ):
 
-        # 1️⃣ Get latest draft
+        # =====================================================
+        # 1️⃣ Get User Profile
+        # =====================================================
+        profile = db.query(UserProfile).filter(
+            UserProfile.user_id == user_id
+        ).first()
+
+        if not profile:
+            raise HTTPException(404, "User profile not found")
+
+        # =====================================================
+        # 2️⃣ Get latest draft application
+        # =====================================================
         application = db.query(LoanApplication).filter(
-            LoanApplication.user_profile_id == user_id,
-            LoanApplication.is_submitted == False
+            LoanApplication.user_profile_id == profile.user_id,
+            LoanApplication.is_submitted == False,
+            LoanApplication.application_status == enum_value(LoanApplicationStatus.DRAFT)
         ).order_by(LoanApplication.id.desc()).first()
 
         if not application:
@@ -33,76 +79,90 @@ class LoanApplicationDeclarationService:
                 detail="No active draft application found"
             )
 
-        # 2️⃣ Get tracker
-        tracker = db.query(LoanApplicationStepTracker).filter(
-            LoanApplicationStepTracker.application_id == application.id
-        ).first()
+        # 🔐 Ensure editable
+        LoanApplicationService.ensure_editable(application)
 
-        if not tracker:
-            raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail="Application steps not initialized"
-            )
+        # =====================================================
+        # 3️⃣ Tracker
+        # =====================================================
+        tracker = get_or_create_tracker(db, application)
 
+        # =====================================================
+        # 4️⃣ Validation
+        # =====================================================
         if not tracker.references_completed:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Complete reference verification first"
             )
 
-        # 3️⃣ Mandatory consent validation
         if not payload.agreed_terms:
-            raise HTTPException(
-                status_code=400,
-                detail="You must agree to Terms & Conditions"
-            )
+            raise HTTPException(400, "You must agree to Terms & Conditions")
 
         if not payload.consent_credit_check:
-            raise HTTPException(
-                status_code=400,
-                detail="Credit bureau consent is mandatory"
-            )
+            raise HTTPException(400, "Credit bureau consent is mandatory")
 
         if not payload.consent_data_sharing:
-            raise HTTPException(
-                status_code=400,
-                detail="Data sharing consent is mandatory"
+            raise HTTPException(400, "Data sharing consent is mandatory")
+
+        # =====================================================
+        # 5️⃣ Save into DECLARATION TABLE (FIXED)
+        # =====================================================
+        declaration = db.query(LoanApplicationDeclaration).filter(
+            LoanApplicationDeclaration.application_id == application.id
+        ).first()
+
+        if not declaration:
+            declaration = LoanApplicationDeclaration(
+                application_id=application.id
             )
+            db.add(declaration)
 
-        # 4️⃣ Save declaration fields
-        application.has_existing_loans = payload.has_existing_loans
-        application.has_credit_card = payload.has_credit_card
-        application.has_default_history = payload.has_default_history
+        declaration.has_existing_loans = payload.has_existing_loans
+        declaration.has_credit_card = payload.has_credit_card
+        declaration.has_default_history = payload.has_default_history
 
-        application.agreed_terms = payload.agreed_terms
-        application.consent_credit_check = payload.consent_credit_check
-        application.consent_data_sharing = payload.consent_data_sharing
+        declaration.agreed_terms = payload.agreed_terms
+        declaration.consent_credit_check = payload.consent_credit_check
+        declaration.consent_data_sharing = payload.consent_data_sharing
 
-        application.terms_version = payload.terms_version
-        application.privacy_policy_version = payload.privacy_policy_version
+        declaration.terms_version = payload.terms_version
+        declaration.privacy_policy_version = payload.privacy_policy_version
 
-        application.declaration_accepted_at = datetime.now(timezone.utc)
-        application.declaration_ip = ip_address
-        application.declaration_user_agent = user_agent
+        declaration.consent_timestamp = datetime.now(timezone.utc)
+        declaration.ip_address = ip_address
+        declaration.user_agent = user_agent
 
-        # 5️⃣ Move step to SUMMARY
+        # =====================================================
+        # 6️⃣ UPDATE TRACKER
+        # =====================================================
         tracker.declaration_completed = True
         tracker.last_completed_step = enum_value(LoanApplicationStep.DECLARATION)
-        tracker.current_step = enum_value(LoanApplicationStep.SUMMARY)
 
-        application.current_step = enum_value(LoanApplicationStep.SUMMARY)
+        tracker.current_step = enum_value(LoanApplicationStep.DECLARATION)
+        application.current_step = enum_value(LoanApplicationStep.DECLARATION)
 
+        db.add(tracker)
+        db.add(application)
         db.commit()
         db.refresh(application)
 
-        # 6️⃣ RETURN PROPER RESPONSE (NOT ORM)
-        return LoanApplicationDeclarationResponse(
-            has_existing_loans=application.has_existing_loans,
-            has_credit_card=application.has_credit_card,
-            has_default_history=application.has_default_history,
-            agreed_terms=application.agreed_terms,
-            consent_credit_check=application.consent_credit_check,
-            consent_timestamp=application.declaration_accepted_at,
-            ip_address=application.declaration_ip,
-            user_agent=application.declaration_user_agent,
-        )
+        # =====================================================
+        # 7️⃣ RESPONSE
+        # =====================================================
+        return {
+            "application_id": application.id,
+            "current_step": "DECLARATION",
+            "next_step": "SUMMARY",
+            "data": LoanApplicationDeclarationResponse(
+                has_existing_loans=declaration.has_existing_loans,
+                has_credit_card=declaration.has_credit_card,
+                has_default_history=declaration.has_default_history,
+                agreed_terms=declaration.agreed_terms,
+                consent_credit_check=declaration.consent_credit_check,
+                consent_timestamp=declaration.consent_timestamp,
+                ip_address=declaration.ip_address,
+                user_agent=declaration.user_agent,
+            ),
+            "message": "Declaration saved successfully"
+        }

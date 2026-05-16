@@ -1,48 +1,56 @@
 from sqlalchemy import func
 from sqlalchemy.orm import Session
 
-from  repositories.Tracking.loan_application_repo import LoanApplicationRepository
-from  repositories.Tracking.loan_status_history_repo import LoanStatusHistoryRepository
-from  repositories.Tracking.loan_repo import LoanRepository
+from core.logger import logger
+from core.enums import LoanApplicationStatus
 
-from  services.Tracking.kyc_service import KYCService
-from  services.Tracking.notification_service import NotificationService
+from repositories.Tracking.loan_application_repo import LoanApplicationRepository
+from repositories.Tracking.loan_status_history_repo import LoanStatusHistoryRepository
 
-from  utils.enums import LoanStatus
-from  utils.notification_messages import NotificationMessages
+from services.Tracking.kyc_service import DocumentStatusService as KYCService
+from services.Tracking.notification_service import NotificationService
+
+from utils.notification_messages import NotificationMessages
+from utils.agreement_client import initiate_esign
+from utils.emi_client import generate_emi
 
 
 class StatusUpdateService:
 
+    # =====================================================
+    # VALIDATION
+    # =====================================================
     @staticmethod
-    def validate_transition(old_status: str, new_status: str):
+    def validate_transition(old_status, new_status):
         VALID_TRANSITIONS = {
-            LoanStatus.SUBMITTED: [LoanStatus.UNDER_REVIEW],
-            LoanStatus.UNDER_REVIEW: [
-                LoanStatus.VERIFICATION_PENDING,
-                LoanStatus.CREDIT_CHECK,
-                LoanStatus.REJECTED
+            LoanApplicationStatus.SUBMITTED: [LoanApplicationStatus.UNDER_REVIEW],
+            LoanApplicationStatus.UNDER_REVIEW: [
+                LoanApplicationStatus.VERIFICATION_PENDING,
+                LoanApplicationStatus.CREDIT_CHECK,
+                LoanApplicationStatus.REJECTED
             ],
-            LoanStatus.VERIFICATION_PENDING: [LoanStatus.UNDER_REVIEW],
-            LoanStatus.CREDIT_CHECK: [
-                LoanStatus.LENDER_REVIEW,
-                LoanStatus.REJECTED
+            LoanApplicationStatus.VERIFICATION_PENDING: [LoanApplicationStatus.UNDER_REVIEW],
+            LoanApplicationStatus.CREDIT_CHECK: [
+                LoanApplicationStatus.LENDER_REVIEW,
+                LoanApplicationStatus.REJECTED,
+                LoanApplicationStatus.VERIFICATION_PENDING
             ],
-            LoanStatus.LENDER_REVIEW: [
-                LoanStatus.APPROVED,
-                LoanStatus.REJECTED
+            LoanApplicationStatus.LENDER_REVIEW: [
+                LoanApplicationStatus.APPROVED,
+                LoanApplicationStatus.REJECTED
             ],
-            LoanStatus.APPROVED: [LoanStatus.AGREEMENT_PENDING],
-            LoanStatus.AGREEMENT_PENDING: [LoanStatus.DISBURSEMENT_INITIATED],
-            LoanStatus.DISBURSEMENT_INITIATED: [LoanStatus.DISBURSED],
-            LoanStatus.DISBURSED: [LoanStatus.ACTIVE],
-            LoanStatus.ACTIVE: [LoanStatus.CLOSED]
+            LoanApplicationStatus.APPROVED: [LoanApplicationStatus.AGREEMENT_PENDING],
+            LoanApplicationStatus.AGREEMENT_PENDING: [LoanApplicationStatus.DISBURSEMENT_INITIATED],
+            LoanApplicationStatus.DISBURSEMENT_INITIATED: [LoanApplicationStatus.DISBURSED],
+            LoanApplicationStatus.DISBURSED: [LoanApplicationStatus.ACTIVE],
+            LoanApplicationStatus.ACTIVE: [LoanApplicationStatus.CLOSED]
         }
 
-        allowed = VALID_TRANSITIONS.get(old_status, [])
-        return new_status in allowed
+        return new_status in VALID_TRANSITIONS.get(old_status, [])
 
-    # ✅ FIXED: method moved inside class
+    # =====================================================
+    # MAIN METHOD
+    # =====================================================
     @staticmethod
     def update_status(
         db: Session,
@@ -50,107 +58,108 @@ class StatusUpdateService:
         user_id: int,
         new_status: str,
         source="SYSTEM",
-        comment=None
+        comment=None,
+        token: str = None
     ):
-        app = LoanApplicationRepository.get_by_id(db, application_id)
-        if not app:
-            raise Exception("Application not found")
 
-        old_status = LoanStatus( application_status)
-        new_status = LoanStatus(new_status)
+        try:
+            app = LoanApplicationRepository.get_by_id(db, application_id)
 
-        # Ignore NBFC updates after APPROVED
-        if (
-            source == "NBFC_WEBHOOK"
-            and old_status in [
-                LoanStatus.APPROVED,
-                LoanStatus.AGREEMENT_PENDING,
-                LoanStatus.DISBURSEMENT_INITIATED,
-                LoanStatus.DISBURSED,
-                LoanStatus.ACTIVE
-            ]
-        ):
-            return app
+            if not app:
+                raise Exception("Application not found")
 
-        # KYC check before CREDIT_CHECK
-        if new_status == LoanStatus.CREDIT_CHECK:
-            kyc_status = KYCService.fetch_user_kyc_status(
+            old_status = LoanApplicationStatus(app.application_status)
+            new_status = LoanApplicationStatus(new_status)
+
+            # SAME STATUS
+            if old_status == new_status:
+                return app
+
+            # KYC check
+            if new_status == LoanApplicationStatus.CREDIT_CHECK:
+                kyc_status = KYCService.fetch_user_kyc_status(db, user_id)
+                if kyc_status != "COMPLETED":
+                    new_status = LoanApplicationStatus.VERIFICATION_PENDING
+                    comment = "KYC incomplete"
+
+            # VALIDATE TRANSITION
+            if not StatusUpdateService.validate_transition(old_status, new_status):
+                raise Exception(f"Invalid transition: {old_status} → {new_status}")
+
+            # UPDATE STATUS
+            updated_app = LoanApplicationRepository.update_status(
                 db,
-                user_id
+                application_id,
+                new_status
             )
 
-            if not KYCService.is_kyc_completed(kyc_status):
-                new_status = LoanStatus.VERIFICATION_PENDING
-                comment = "KYC incomplete - moved to verification pending"
-
-        if not StatusUpdateService.validate_transition(
-            old_status,
-            new_status
-        ):
-            raise Exception(
-                f"Invalid status transition: {old_status} → {new_status}"
+            # HISTORY
+            LoanStatusHistoryRepository.insert_history(
+                db=db,
+                application_id=application_id,
+                old_status=old_status.value,
+                new_status=new_status.value,
+                source=source,
+                comment=comment
             )
 
-        if new_status == LoanStatus.DISBURSED:
-            existing_loan = LoanRepository.get_by_application_id(
-                db,
-                application_id
+            # =====================================================
+            # SIDE EFFECTS (SAFE)
+            # =====================================================
+
+            # AGREEMENT FLOW
+            if new_status == LoanApplicationStatus.AGREEMENT_PENDING:
+                try:
+                    initiate_esign(application_id, user_id)
+                except Exception as e:
+                    logger.error(f"[ESIGN ERROR] {str(e)}")
+
+            # DISBURSED FLOW
+            if new_status == LoanApplicationStatus.DISBURSED:
+                app.disbursed_at = func.now()
+
+                NotificationService.send_custom_message(
+                    db=db,
+                    user_id=user_id,
+                    application_id=application_id,
+                    title="Loan Status Update",
+                    message=NotificationMessages.LOAN_DISBURSED.value,
+                    notif_type="STATUS_UPDATE"
+                )
+
+                # auto move to ACTIVE
+                return StatusUpdateService.update_status(
+                    db,
+                    application_id,
+                    user_id,
+                    LoanApplicationStatus.ACTIVE,
+                    source="SYSTEM",
+                    comment="Auto ACTIVE"
+                )
+
+            # ACTIVE FLOW
+            if new_status == LoanApplicationStatus.ACTIVE:
+                try:
+                    if token:
+                        generate_emi(token)
+                except Exception as e:
+                    logger.error(f"[EMI ERROR] {str(e)}")
+
+            # NOTIFICATION
+            NotificationService.send_custom_message(
+                db=db,
+                user_id=user_id,
+                application_id=application_id,
+                title="Loan Status Update",
+                message=NotificationMessages.NBFC_STATUS_UPDATE.value,
+                notif_type="STATUS_UPDATE"
             )
-            if not existing_loan:
-                loan_data = {
-            "application_id":  id,
-            "user_id":  user_id,
-            "principal":  approved_amount,
-            "interest_rate":  interest_rate,
-            "tenure_months":  requested_tenure_months,
-            "emi_amount":  monthly_emi,
-            "status": LoanStatus.ACTIVE,
-            "disbursed_at": func.now(),
 
-        }
-            LoanRepository.create(db, loan_data)
+            db.commit()
 
-        updated_app = LoanApplicationRepository.update_status(
-            db,
-            application_id,
-            new_status
-        )
+            return updated_app
 
-        LoanStatusHistoryRepository.insert_history(
-            db=db,
-            application_id=application_id,
-            old_status=old_status,
-            new_status=new_status,
-            source=source,
-            comment=comment
-        )
-
-        message_map = {
-            LoanStatus.UNDER_REVIEW: NotificationMessages.APPLICATION_UNDER_REVIEW.value,
-            LoanStatus.VERIFICATION_PENDING: "KYC verification pending. Please upload missing documents.",
-            LoanStatus.CREDIT_CHECK: NotificationMessages.CREDIT_CHECK_STARTED.value,
-            LoanStatus.APPROVED: NotificationMessages.APPLICATION_APPROVED.value,
-            LoanStatus.REJECTED: NotificationMessages.APPLICATION_REJECTED.value,
-            LoanStatus.AGREEMENT_PENDING: NotificationMessages.AGREEMENT_PENDING.value,
-            LoanStatus.DISBURSEMENT_INITIATED: NotificationMessages.DISBURSEMENT_INITIATED.value,
-            LoanStatus.DISBURSED: NotificationMessages.LOAN_DISBURSED.value,
-            LoanStatus.ACTIVE: NotificationMessages.LOAN_ACTIVE.value,
-            LoanStatus.CLOSED: NotificationMessages.LOAN_CLOSED.value
-           
-        }
-
-        message = message_map.get(
-            new_status,
-            NotificationMessages.NBFC_STATUS_UPDATE.value
-        )
-
-        NotificationService.send_custom_message(
-            db=db,
-            user_id=user_id,
-            application_id=application_id,
-            title="Loan Status Update",
-            message=message,
-            notif_type="STATUS_UPDATE"
-        )
-
-        return updated_app
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[STATUS UPDATE ERROR] {str(e)}")
+            raise

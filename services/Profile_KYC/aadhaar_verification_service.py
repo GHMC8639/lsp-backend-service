@@ -8,7 +8,6 @@ from repositories.Profile_KYC.kyc_aadhaar_verification_repository import KYCAadh
 from core.config import settings
 from repositories.Profile_KYC.dummy_pan_repository import DummyPANRepository 
 
-
 class AadhaarVerificationService:
 
     @staticmethod

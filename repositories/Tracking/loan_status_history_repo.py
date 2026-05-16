@@ -1,5 +1,4 @@
 
-
 from sqlalchemy.orm import Session
 from models.Loan_application.loan_status_history import LoanStatusHistory
 

@@ -3,6 +3,9 @@ from typing import Optional
 from datetime import datetime
 
 
+# =====================================================
+# CREATE SCHEMA
+# =====================================================
 class LoanApplicationDeclarationCreate(BaseModel):
     has_existing_loans: bool
     has_credit_card: bool
@@ -16,6 +19,9 @@ class LoanApplicationDeclarationCreate(BaseModel):
     privacy_policy_version: str = Field(..., max_length=20)
 
 
+# =====================================================
+# UPDATE SCHEMA
+# =====================================================
 class LoanApplicationDeclarationUpdate(BaseModel):
     has_existing_loans: Optional[bool] = None
     has_credit_card: Optional[bool] = None
@@ -25,26 +31,44 @@ class LoanApplicationDeclarationUpdate(BaseModel):
     consent_data_sharing: Optional[bool] = None
 
 
+# =====================================================
+# RESPONSE (FLAT DECLARATION)
+# =====================================================
 class LoanApplicationDeclarationResponse(BaseModel):
     has_existing_loans: bool
     has_credit_card: bool
     has_default_history: bool
     agreed_terms: bool
     consent_credit_check: bool
-    declaration_accepted_at: datetime = Field(
-        alias="consent_timestamp")
+    consent_timestamp: datetime  # ✅ removed alias confusion
     ip_address: Optional[str]
     user_agent: Optional[str]
-    model_config = ConfigDict(
-        from_attributes=True,
-        populate_by_name=True)
 
+    model_config = ConfigDict(
+        from_attributes=True
+    )
+
+
+# =====================================================
+# WRAPPER RESPONSE (IMPORTANT FIX)
+# =====================================================
+class LoanApplicationDeclarationWrapperResponse(BaseModel):
+    application_id: int
+    current_step: str
+    next_step: str
+    data: LoanApplicationDeclarationResponse
+    message: str
+
+
+# =====================================================
+# SUMMARY RESPONSE
+# =====================================================
 class DeclarationSummary(BaseModel):
     agreed_terms: bool
     consent_credit_check: bool
-    declaration_accepted_at: str
+    consent_timestamp: datetime
     has_existing_loans: bool
     has_credit_card: bool
     has_default_history: bool
+
     model_config = ConfigDict(from_attributes=True)
-    

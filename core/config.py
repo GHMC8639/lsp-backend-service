@@ -1,161 +1,171 @@
 from functools import lru_cache
 from pathlib import Path
-from pydantic_settings import BaseSettings, SettingsConfigDict
 from typing import List, Optional
-
-
+ 
+from pydantic_settings import BaseSettings, SettingsConfigDict
+ 
+ 
 class Settings(BaseSettings):
-
-
-    DATABASE_URL: str
-
-    MAIL_USERNAME: str
-    MAIL_PASSWORD: str
-    MAIL_FROM: str
-    MAIL_SERVER: str
-    MAIL_PORT: int
-    MAIL_STARTTLS: bool
-    MAIL_SSL_TLS: bool
-
+ 
     # ============================================================
-    # Environment
+    # ENVIRONMENT
     # ============================================================
     APP_ENV: str = "development"
+    ENV: str = "dev"
     DEFAULT_CONSENT_VERSION: str = "v1.0"
-
+ 
     # ============================================================
-    # Security
+    # DATABASE
+    # ============================================================
+    DATABASE_URL: str
+ 
+    # ============================================================
+    # SECURITY
     # ============================================================
     SECRET_KEY: str
     ALGORITHM: str = "HS256"
-
+ 
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1000
     REFRESH_TOKEN_EXPIRE_DAYS: int = 30
-
+ 
     # ============================================================
-    # Super Admin Bootstrap
-    # ============================================================
-    SUPERADMIN_TOKEN: str
-    SUPER_ADMIN_NAME: str
-    SUPER_ADMIN_MOBILE: str
-    SUPER_ADMIN_DEVICE_ID: str
-    SUPER_ADMIN_PASSWORD: str
-
-    # ============================================================
-    # Database
-    # ============================================================
-    DATABASE_URL: str
-
-    # ============================================================
-    # Redis (OTP storage)
+    # REDIS (OTP / CACHE)
     # ============================================================
     REDIS_HOST: str = "localhost"
     REDIS_PORT: int = 6379
     REDIS_PASSWORD: Optional[str] = None
-
+ 
     # ============================================================
-    # Twilio SMS Configuration
+    # SMS CONFIG (MSG91)
     # ============================================================
-    TWILIO_ACCOUNT_SID: str
-    TWILIO_AUTH_TOKEN: str
-    TWILIO_PHONE_NUMBER: str
-
+    MSG91_API_KEY: Optional[str] = None
+    MSG91_FLOW_ID: Optional[str] = None
+    MSG91_SENDER_ID: str = "MSGIND"
+    COUNTRY_CODE: str = "91"
+ 
+    SMS_ENABLED: bool = False
+ 
     # ============================================================
-    # Verification Mode
+    # TWILIO (OPTIONAL)
     # ============================================================
-    VERIFICATION_MODE: str = "dummy"
-
+    TWILIO_ACCOUNT_SID: Optional[str] = None
+    TWILIO_AUTH_TOKEN: Optional[str] = None
+    TWILIO_PHONE_NUMBER: Optional[str] = None
+ 
+    # ============================================================
+    # MAIL CONFIG
+    # ============================================================
+    MAIL_USERNAME: str
+    MAIL_PASSWORD: str
+    MAIL_FROM: str
+    MAIL_SERVER: str = "smtp.gmail.com"
+    MAIL_PORT: int = 587
+    MAIL_STARTTLS: bool = True
+    MAIL_SSL_TLS: bool = False
+ 
+    # ============================================================
+    # SUPER ADMIN
+    # ============================================================
+    SUPERADMIN_TOKEN: Optional[str] = None
+    SUPER_ADMIN_NAME: Optional[str] = None
+    SUPER_ADMIN_MOBILE: Optional[str] = None
+    SUPER_ADMIN_DEVICE_ID: Optional[str] = None
+    SUPER_ADMIN_PASSWORD: Optional[str] = None
+ 
+    # ============================================================
+    # KYC LIMITS
+    # ============================================================
     PAN_MAX_ATTEMPTS: int = 3
     AADHAAR_MAX_ATTEMPTS: int = 3
     BANK_MAX_ATTEMPTS: int = 3
-
+ 
     PAN_COOLDOWN_HOURS: int = 24
     AADHAAR_COOLDOWN_HOURS: int = 24
     BANK_COOLDOWN_HOURS: int = 24
-
+ 
     NAME_MATCH_THRESHOLD: float = 80.0
-
+ 
     # ============================================================
-    # File Upload
+    # FILE UPLOAD
     # ============================================================
     MAX_FILE_SIZE_MB: int = 2
     ALLOWED_IMAGE_EXTENSIONS: List[str] = [".jpg", ".jpeg", ".png"]
     ALLOWED_DOCUMENT_EXTENSIONS: List[str] = [".pdf"]
-    UPLOAD_BASE_PATH: str = "uploads"
-
-    DOC_MAX_ATTEMPTS: int = 3
-    DOC_COOLDOWN_HOURS: int = 24
-    DOC_MATCH_THRESHOLD: float = 75.0
-
+ 
     # ============================================================
-    # Data Retention
+    # DATA RETENTION
     # ============================================================
     RETENTION_DAYS: int = 90
     TRACKER_CLEANUP_HOURS: int = 48
     REJECTED_DOCS_RETENTION_DAYS: int = 90
-
+ 
     # ============================================================
-    # KARZA API
+    # CLOUDINARY
     # ============================================================
-    KARZA_API_KEY: Optional[str] = None
-    KARZA_PAN_URL: str = "https://api.karza.in/v3/sync/pan-verification"
-
+    CLOUDINARY_CLOUD_NAME: str
+    CLOUDINARY_API_KEY: str
+    CLOUDINARY_API_SECRET: str
+ 
     # ============================================================
-    # DigiLocker
+    # DIGILOCKER
     # ============================================================
     DIGILOCKER_CLIENT_ID: Optional[str] = None
     DIGILOCKER_CLIENT_SECRET: Optional[str] = None
     DIGILOCKER_REDIRECT_URI: Optional[str] = None
-    DIGILOCKER_AUTH_URL: str = "https://api.digitallocker.gov.in/public/oauth2/1/authorize"
-    DIGILOCKER_TOKEN_URL: str = "https://api.digitallocker.gov.in/public/oauth2/1/token"
-    DIGILOCKER_AADHAAR_URL: str = "https://api.digitallocker.gov.in/public/oauth2/1/xml/eaadhaar"
-
+ 
     # ============================================================
-    # Cashfree
+    # PAYMENT (RAZORPAY / RAZORPAYX)
     # ============================================================
-    CASHFREE_APP_ID: Optional[str] = None
-    CASHFREE_SECRET_KEY: Optional[str] = None
-    CASHFREE_BANK_URL: str = "https://api.cashfree.com/verification/bank-account/sync"
-
+    PAYMENT_KEY_ID: Optional[str] = None
+    PAYMENT_KEY_SECRET: Optional[str] = None
+    PAYMENT_ACCOUNT_NUMBER: Optional[str] = None
+ 
+    RAZORPAY_KEY_ID: str
+    RAZORPAY_KEY_SECRET: str
+    RAZORPAYX_ACCOUNT_NUMBER: Optional[str] = None
+ 
+    RAZORPAY_BASE_URL: str = "https://api.razorpay.com/v1"
+ 
+    RAZORPAY_WEBHOOK_SECRET: str = ""
+    RAZORPAYX_WEBHOOK_SECRET: str = ""
+ 
     # ============================================================
-    # Hyperverge
+    # ESIGN
     # ============================================================
-    HYPERVERGE_APP_ID: Optional[str] = None
-    HYPERVERGE_APP_KEY: Optional[str] = None
-    HYPERVERGE_API_URL: str = "https://ind-docs.hyperverge.co/v2.0/readKYC"
-    
-    # ---- ESIGN ----
-    ENV: str = "DEV"
     AGREEMENT_STORAGE_PATH: str = "storage/generated_pdfs"
     SIGNED_PDF_PATH: str = "storage/signed_pdfs"
+ 
     ESIGN_PROVIDER: str = "eMudhra"
-    ESIGN_BASE_URL: str = ""
-    ESIGN_API_KEY: str = ""
-    ESIGN_CLIENT_SECRET: str = ""
-    LOAN_SERVICE_BASE_URL: str = "LOAN_SERVICE_BASE_URL=http://localhost:8000/api/v1/loans"
-    ESIGN_CALLBACK_SECRET: str = ""
-    CALLBACK_URL: str = ""
-
+ 
+    LOAN_SERVICE_BASE_URL: str = "http://localhost:8000/api/v1/loans"
+ 
     # ============================================================
-    # Computed Fields
+    # MODULE INTEGRATION
+    # ============================================================
+    MODULE_7_URL: Optional[str] = "http://localhost:8001"
+    MODULE_8_URL: Optional[str] = "http://localhost:8002"
+ 
+    # ============================================================
+    # COMPUTED
     # ============================================================
     @property
     def MAX_FILE_SIZE_BYTES(self) -> int:
         return self.MAX_FILE_SIZE_MB * 1024 * 1024
-
+ 
     # ============================================================
-    # Pydantic Config
+    # PYDANTIC CONFIG
     # ============================================================
     model_config = SettingsConfigDict(
-        env_file=str(Path(__file__).parent.parent / ".env"),
+        env_file=str(Path(__file__).resolve().parent.parent / ".env"),
         case_sensitive=True,
         extra="ignore",
     )
-
-
+ 
+ 
 @lru_cache
 def get_settings() -> Settings:
     return Settings()
-
-
+ 
+ 
 settings = get_settings()
+ 

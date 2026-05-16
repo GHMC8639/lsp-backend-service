@@ -36,7 +36,7 @@ async def receive_nbfc_webhook(
         # DEV MODE (skip validation)
         # ------------------------------------------------
         if settings.ENV.upper() == "DEV":
-            logger.warning("⚠️ DEV mode: skipping signature validation")
+            logger.warning(" DEV mode: skipping signature validation")
 
         else:
             # ------------------------------------------------
@@ -49,7 +49,7 @@ async def receive_nbfc_webhook(
                 )
 
             if not verify_callback_signature(raw_body, x_signature):
-                logger.warning("❌ Invalid NBFC webhook signature")
+                logger.warning("Invalid NBFC webhook signature")
                 raise HTTPException(
                     status_code=403,
                     detail="Invalid signature"
@@ -58,12 +58,12 @@ async def receive_nbfc_webhook(
         # ------------------------------------------------
         # IDEMPOTENCY CHECK (VERY IMPORTANT)
         # ------------------------------------------------
-        if NBFCService.is_duplicate_event(db, payload.transaction_id):
-            logger.info(f"Duplicate webhook ignored: {payload.transaction_id}")
-            return {
-                "success": True,
-                "message": "Duplicate webhook ignored"
-            }
+        # if NBFCService.is_duplicate_event(db, payload.transaction_id):
+        #     logger.info(f"Duplicate webhook ignored: {payload.transaction_id}")
+        #     return {
+        #         "success": True,
+        #         "message": "Duplicate webhook ignored"
+        #     }
 
         # ------------------------------------------------
         # PROCESS WEBHOOK
@@ -81,7 +81,7 @@ async def receive_nbfc_webhook(
         raise  # ✅ don't override HTTP errors
 
     except Exception as e:
-        logger.error(f"🔥 NBFC webhook failed: {str(e)}")
+        logger.error(f"NBFC webhook failed: {str(e)}")
 
         raise HTTPException(
             status_code=500,

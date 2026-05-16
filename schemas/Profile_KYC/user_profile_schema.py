@@ -7,7 +7,8 @@ class UserRegistrationRequest(BaseModel):
     email: EmailStr
     full_name: str = Field(..., min_length=2, max_length=150)
     dob: date
-    address: str = Field(..., min_length=10)
+    permanent_address: str = Field(..., min_length=10, description="As per Aadhaar")
+    temporary_address: str= Field(None, min_length=10)
     employment_type: str = Field(..., min_length=3, max_length=50)
     monthly_income: Decimal = Field(..., gt=0)
     aadhaar_number: str = Field(..., min_length=12, max_length=12)
@@ -60,7 +61,7 @@ class UserRegistrationRequest(BaseModel):
     def validate_pan(cls, v: str) -> str:
         v = v.strip().upper()
         if not re.match(r"^[A-Z]{5}[0-9]{4}[A-Z]{1}$", v):
-            raise ValueError("Invalid PAN format. Expected: ABCDE1234F")
+            raise ValueError("Invalid PAN format")
         return v
 
 class UserRegistrationResponse(BaseModel):
@@ -78,7 +79,7 @@ class UserProfileUpdateRequest(BaseModel):
     pan_number: Optional[str] = Field(None, min_length=10, max_length=10)
     aadhaar_number: Optional[str]  = Field(None, min_length=12, max_length=12)
     dob: Optional[date] = None
-    address: Optional[str] = Field(None, min_length=10)
+    temporary_address: Optional[str] = Field(None, min_length=10)
     employment_type: Optional[str]  = Field(None, min_length=3, max_length=50)
     monthly_income: Optional[Decimal] = Field(None, gt=0)
 

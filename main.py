@@ -1,65 +1,92 @@
-# main.py
-import asyncio
 from fastapi import FastAPI
 from contextlib import asynccontextmanager
-import os
-from models.Support import chat, complaint, grievance
-from models.Esign import agreements, esign_session, signed_documents, audit_logs
-from services.Auth.otp_cleanup import cleanup_otps
-from core.database import Base
-from core.database import engine, SessionLocal
+
+# ------------------- CORE -------------------
+from core.database import Base, engine, SessionLocal
 from core.seed import create_default_super_admin
 from core.config import settings
+from consent.seed import seed_all
+from utils.db_init import ensure_enum_values
 
-# Importing routers
+# ------------------- AUTH -------------------
+from routers.Auth import lender, superadmin_access, login_SL, user_register, twofactor, email,forgot_password,biometric,support
 
-from routers.Auth import lender
-from routers.Auth import superadmin_access
-from routers.Auth import login_SL
-from routers.Auth import user_register
-from routers.Eligibility.credit_route import router as credit_router
-from routers.Eligibility.eligibility_route import router as eligibility_router
-from routers.Eligibility.eligibility_result import router as eligibility_result_router
-from routers.Eligibility.loan_calculator_route import router as loan_calculator_router
-from routers.Eligibility.loan_calculator_result import router as loan_router
-from routers.Loan_application.loan_eligibility_router import router as loan_eligibility_router
-from routers.Loan_application.loan_application_router import router as loan_application_router
-from routers.Loan_application.loan_application_purpose_router import router as loan_application_purpose_router
-from routers.Loan_application.loan_application_reference_router import router as loan_application_reference_router
-from routers.Loan_application.reference_otp_router import router as reference_otp_router
-from routers.Loan_application.loan_application_summary_router import router as loan_application_summary_router
-from routers.Loan_application.loan_application_declaration_router import router as loan_application_declaration_router
-from routers.Loan_application.lender_router import router as lender_router
-from routers.Loan_application.loan_disbursement_router import router as loan_disbursement_router
-from routers.Support import chat, complaint, contact, faq, grievance
-from routers.Support.faq import router as faq_router
-from routers.Support.chat import router as chat_router
-from routers.Support.complaint import router as complaint_router
-from routers.Support.contact import router as contact_router
-from routers.Support.grievance import router as grievance_router
-from routers.Esign.esign_router import router as esign_router
-from routers.Esign.agreement_router import router as agreement_router
-from routers.Esign.disbursement_router import router as disbursement_router
+# ------------------- PROFILE & KYC -------------------
 from routers.Profile_KYC.profile_router import router as profile_router
 from routers.Profile_KYC.pan_router import router as pan_router
 from routers.Profile_KYC.aadhaar_router import router as aadhaar_router
 from routers.Profile_KYC.bank_router import router as bank_router
 from routers.Profile_KYC.document_router import router as document_router
 from routers.Profile_KYC.admin_router import router as admin_router
+from models.Profile_KYC.attempt_tracker import AttemptTracker
 from services.Profile_KYC.auto_cleanup import AutoCleanup
+
+# ------------------- CONSENT -------------------
 from routers.Consent.consent_routers import router as consent_router
 from routers.Consent.legal_routers import router as legal_router
-from routers.Tracking.tracking_router import router as tracking_router
-from routers.Tracking.reupload_router import router as reupload_router
-from routers.Tracking.notifications_router import router as notifications_router
-from routers.Tracking.nbfc_webhook_router import router as nbfc_webhook_router
-from routers.Tracking.internal_status_router import router as internal_status_router
+
+# ------------------- SETTINGS -------------------
 from routers.Settings.profile_router import router as settings_profile_router
 from routers.Settings.settings_router import router as settings_router
 
+# ------------------- ELIGIBILITY -------------------
+from routers.Eligibility.credit_route import router as credit_router
+from routers.Eligibility.eligibility_route import router as eligibility_router
+from routers.Eligibility.eligibility_result import router as eligibility_result_router
+from routers.Eligibility.get_lenders import router as get_lenders_router
+from routers.Eligibility.select_lender import router as select_lender_router
+from routers.Eligibility.loan_calculator_route import router as loan_calculator_router
+
+# ------------------- LOAN APPLICATION -------------------
+from routers.Loan_application.loan_application_router import router as loan_application_router
+from routers.Loan_application.loan_application_purpose_router import router as loan_application_purpose_router
+from routers.Loan_application.loan_application_reference_router import router as loan_application_reference_router
+from routers.Loan_application.reference_otp_router import router as reference_otp_router
+from routers.Loan_application.loan_application_declaration_router import router as loan_application_declaration_router
+from routers.Loan_application.loan_application_summary_router import router as loan_application_summary_router
+from routers.Loan_application.lender_dashboard_router import router as lender_dashboard_router
+from routers.Loan_application.razorpayx_webhook import router as razorpayx_webhook_router
+from routers.Loan_application.user_predisbursement_router import router as user_predisbursement_router
+from routers.Loan_application.loan_application_submit_router import router as loan_application_submit_router
+
+# ------------------- TRACKING -------------------
+from routers.Tracking.tracking_router import router as tracking_router
+#from routers.Tracking.reupload_router import router as reupload_router
+from routers.Tracking.document_status_router import router as reupload_router
+from routers.Tracking.nbfc_webhook_router import router as nbfc_router
+from routers.Tracking.notifications_router import router as notifications_router
+from routers.Tracking.internal_status_router import router as internal_status_router
+
+# ------------------- REPAYMENT -------------------
+from routers.Repayment.generate_emi import router as generate_emi_router
+from routers.Repayment.emi_pdf import router as emi_pdf_router
+from routers.Repayment.emi_reminder import router as emi_reminder_router
+from routers.Repayment.overdue import router as overdue_router
+from routers.Repayment.auto_debit import router as auto_debit_router
+from routers.Repayment.manual import router as manual_router
+from routers.Repayment.prepay_route import router as prepay_route_router
+from routers.Repayment.foreclosure import router as foreclosure_router
+from routers.Repayment.payment_history import router as payment_history_router
+from routers.Repayment.payment_receipt import router as payment_receipt_router
+from routers.Repayment.loan_closure import router as loan_closure_router
+from routers.Repayment.ndc import router as ndc_router
+from routers.Repayment.webhook import router as razorpay_webhook_router
+# ------------------- SUPPORT -------------------
+from routers.Support.faq import router as faq_router
+from routers.Support.chat import router as chat_router
+from routers.Support.complaint import router as complaint_router
+from routers.Support.contact import router as contact_router
+from routers.Support.grievance import router as grievance_router
+
+# ------------------- ESIGN -------------------
+from routers.Esign.esign_router import router as esign_router
+from routers.Esign.agreement_router import router as agreement_router
 
 
-print("DB URL USED BY APP:", settings.DATABASE_URL)
+
+# ------------------- APP -------------------
+app = FastAPI(title="Loan Service Platform - API")
+
 Base.metadata.create_all(bind=engine)
 auto_cleanup = AutoCleanup(interval_hours=24)
 
@@ -67,52 +94,45 @@ auto_cleanup = AutoCleanup(interval_hours=24)
 async def lifespan(app: FastAPI):
     Base.metadata.create_all(bind=engine, checkfirst=True)
 
-        # 🔍 DEBUG PRINTS (ADD HERE)
-    print("NAME:", settings.SUPER_ADMIN_NAME)
-    print("MOBILE:", settings.SUPER_ADMIN_MOBILE)
-    print("PASSWORD:", settings.SUPER_ADMIN_PASSWORD)
-
-    upload_dirs = ["uploads","uploads/aadhaar","uploads/pan","uploads/salary_slips","uploads/bank_statements"]
-    for dir_path in upload_dirs:
-        os.makedirs(dir_path, exist_ok=True)
-
     auto_cleanup.start()
     print("Auto cleanup service started")
-
     yield
-
     auto_cleanup.stop()
     print("Auto cleanup service stopped")
 
-
-app = FastAPI(title="Loan Service Platform - OTP and Session Auth API",lifespan=lifespan)
-
+# ------------------- STARTUP -------------------
 @app.on_event("startup")
-def startup():
-    print("👉 Calling create_default_super_admin()")
+async def startup():
+    db = SessionLocal()
+    try:
+        # Create default super admin
+        if settings.SUPER_ADMIN_MOBILE and settings.SUPER_ADMIN_PASSWORD:
+            create_default_super_admin(
+                db,
+                settings.SUPER_ADMIN_NAME,
+                settings.SUPER_ADMIN_MOBILE,
+                settings.SUPER_ADMIN_PASSWORD,
+                settings.SUPER_ADMIN_DEVICE_ID,
+            )
 
-db = SessionLocal()
-try:
-    result = create_default_super_admin(
-        db,
-        settings.SUPER_ADMIN_NAME,
-        settings.SUPER_ADMIN_MOBILE,
-        settings.SUPER_ADMIN_PASSWORD,
-        settings.SUPER_ADMIN_DEVICE_ID,
-    )
-    print("👉 Result:", result)
-finally:
-    db.close()
+        # Seed data
+        seed_all(db)
+
+    finally:
+        db.close()
 
 
-#Auth Routers
-
+# ------------------- ROUTES -------------------
 app.include_router(login_SL.router)
 app.include_router(user_register.router)
 app.include_router(lender.router)
 app.include_router(superadmin_access.router)
+app.include_router(twofactor.router)
+app.include_router(email.router)
+app.include_router(forgot_password.router)
+app.include_router(biometric.router)
+app.include_router(support.router)
 
-#Profile and KYC Routers
 app.include_router(profile_router)
 app.include_router(pan_router)
 app.include_router(aadhaar_router)
@@ -120,69 +140,62 @@ app.include_router(bank_router)
 app.include_router(document_router)
 app.include_router(admin_router)
 
-# Consent and Legal Routers
 app.include_router(consent_router)
 app.include_router(legal_router)
 
-# Eligibility and Credit Profile Routers
-app.include_router(credit_router,tags=["Credit Profile"])
+app.include_router(credit_router, tags=["Credit Profile"])
 app.include_router(eligibility_router, tags=["Loan Eligibility"])
 app.include_router(eligibility_result_router, tags=["Loan Eligibility"])
-app.include_router(loan_calculator_router,  tags=["Loan Calculator"])
-app.include_router(loan_router,tags=["Loan Calculator"])
-
-#Loan Application Routers
-# app.include_router(loan_eligibility_router)
+app.include_router(get_lenders_router, tags=["Lenders"])
+app.include_router(select_lender_router, tags=["Lenders"])
+app.include_router(loan_calculator_router, tags=["Loan Calculator"])
 
 app.include_router(loan_application_router)
 app.include_router(loan_application_purpose_router)
-app.include_router(loan_application_reference_router)   
+app.include_router(loan_application_reference_router)
 app.include_router(reference_otp_router)
 app.include_router(loan_application_declaration_router)
+app.include_router(loan_application_summary_router)
+app.include_router(loan_application_submit_router)
+app.include_router(user_predisbursement_router)
+app.include_router(lender_dashboard_router)
+app.include_router(razorpayx_webhook_router)
 
-# app.include_router(loan_application_summary_router)
-app.include_router(lender_router)
-app.include_router(loan_disbursement_router)
-
-#Tracking Routers
 app.include_router(tracking_router)
 app.include_router(reupload_router)
+app.include_router(nbfc_router)
 app.include_router(notifications_router)
-app.include_router(nbfc_webhook_router)
 app.include_router(internal_status_router)
 
+app.include_router(generate_emi_router)
+app.include_router(emi_pdf_router)
+app.include_router(emi_reminder_router)
+app.include_router(overdue_router)
+app.include_router(auto_debit_router)
+app.include_router(manual_router)
+app.include_router(razorpay_webhook_router)
+app.include_router(prepay_route_router)
+app.include_router(foreclosure_router)
+app.include_router(payment_history_router)
+app.include_router(payment_receipt_router)
+app.include_router(loan_closure_router)
+app.include_router(ndc_router)
 
-
-#Support Routers
-app.include_router(faq_router)
-app.include_router(chat_router)
-app.include_router(complaint_router)
-app.include_router(contact_router)
-app.include_router(grievance_router)
-
-#Esign Routers
 app.include_router(agreement_router)
 app.include_router(esign_router)
-app.include_router(disbursement_router)
 
-#Settings Routers
+
+app.include_router(faq_router, tags=["Support"])
+app.include_router(chat_router, tags=["Support"])
+app.include_router(complaint_router, tags=["Support"])
+app.include_router(contact_router, tags=["Support"])
+app.include_router(grievance_router, tags=["Support"])
+
 app.include_router(settings_profile_router)
 app.include_router(settings_router)
 
-# OTP Cleanup Task
-async def otp_cleanup_loop():
-    while True:
-        db = SessionLocal()
-        try:
-            cleanup_otps(db)
-        finally:
-            db.close()
-        await asyncio.sleep(300)  # every 5 minutes
- 
- 
-@app.on_event("startup")
-async def start_cleanup():
-    asyncio.create_task(otp_cleanup_loop())
 
-
-
+# ------------------- ROOT -------------------
+@app.get("/")
+def root():
+    return {"message": "API is running successfully"}

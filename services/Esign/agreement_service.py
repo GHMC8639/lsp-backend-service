@@ -1,125 +1,145 @@
 from sqlalchemy.orm import Session
+from sqlalchemy.exc import SQLAlchemyError
 
 from models.Esign.agreements import Agreement
+from models.Loan_application.loan_application import LoanApplication
+from models.Profile_KYC.user_profile import UserProfile
 
 from core.logger import logger
 from core.exceptions import throw_error
 
 from services.Esign.pdf_generator import PDFGenerator
-from services.Esign.loan_client import LoanClient
-
-from utils.response import success_response
 
 
 class AgreementService:
 
-    def __init__(self, pdf: PDFGenerator, loan_client: LoanClient):
+    def __init__(self, pdf: PDFGenerator):
         self.pdf = pdf
-        self.loan_client = loan_client
 
-    # FETCH AGREEMENT (RETURN EXISTING OR CREATE NEW)
-    def fetch_agreement(self, loan_id: int, db: Session):
+    # =====================================================
+    # 📄 GENERATE / FETCH AGREEMENT
+    # =====================================================
+    def fetch_agreement_for_user(self, user_id: int, db: Session):
 
-        logger.info(f"[Agreement] Fetching agreement for loan_id={loan_id}")
+        logger.info(f"[Agreement] Fetching for user_id={user_id}")
 
-        if loan_id <= 0:
-            throw_error("Invalid loan id", 400)
+        try:
+            # -------------------------------------------------
+            # 🔍 GET USER PROFILE
+            # -------------------------------------------------
+            profile = db.query(UserProfile).filter(
+                UserProfile.user_id == user_id
+            ).first()
 
-        # Fetch loan details
-        loan = self.loan_client.get_loan_sync(loan_id)
+            if not profile:
+                throw_error("User profile not found", 404)
 
-        if not loan:
-            throw_error("Loan not found", 404)
+            # ✅ FIXED HERE
+            user_profile_id = profile.id
+            logger.info(f"[PROFILE ID]: {user_profile_id}")
 
-        if loan["loan_status"] != "APPROVED":
-            throw_error("Loan is not approved", 403)
+            # -------------------------------------------------
+            # 🔍 FETCH APPROVED APPLICATION
+            # -------------------------------------------------
+            application = db.query(LoanApplication).filter(
+                LoanApplication.user_profile_id == user_profile_id,
+                LoanApplication.application_status == "APPROVED"
+            ).order_by(LoanApplication.id.desc()).with_for_update().first()
 
-        # Check existing agreement
-        existing = db.query(Agreement).filter(
-            Agreement.loan_id == loan_id,
-            Agreement.is_active == True
-        ).first()
+            if not application:
+                throw_error("No approved application found", 404)
 
-        if existing:
-            return success_response(
-                "Agreement already exists",
-                {
+            application_id = application.id
+
+            # -------------------------------------------------
+            # 🔍 CHECK EXISTING AGREEMENT
+            # -------------------------------------------------
+            existing = db.query(Agreement).filter(
+                Agreement.application_id == application_id,
+                Agreement.is_active == True
+            ).first()
+
+            if existing:
+                return {
                     "exists": True,
-                    "loan_id": loan_id,
-                    "version": existing.version,
+                    "loan_id": application_id,
                     "pdf_path": existing.agreement_pdf_path,
-                    "file_hash": existing.file_hash,
+                    "status": existing.esign_status,
+                    "provider_ref": getattr(existing, "provider_ref", None),
+                    "signed_pdf_path": getattr(existing, "signed_pdf_path", None)
                 }
+
+            # -------------------------------------------------
+            # 🔢 VERSIONING
+            # -------------------------------------------------
+            latest = db.query(Agreement).filter(
+                Agreement.application_id == application_id
+            ).order_by(Agreement.version.desc()).first()
+
+            new_version = 1 if not latest else latest.version + 1
+
+            # -------------------------------------------------
+            # 📄 GENERATE PDF
+            # -------------------------------------------------
+            pdf_output = self.pdf.generate_agreement(
+                application_id=application_id,
+                borrower_name=getattr(application, "full_name", f"User-{user_id}"),
+                loan_amount=application.approved_amount,
             )
 
-        # Determine next version
-        latest = db.query(Agreement).filter(
-            Agreement.loan_id == loan_id
-        ).order_by(Agreement.version.desc()).first()
+            file_path = pdf_output.get("file_path")
 
-        new_version = 1 if not latest else latest.version + 1
+            if not file_path:
+                throw_error("PDF generation failed", 500)
 
-        # Generate agreement PDF
-        pdf_output = self.pdf.generate_agreement(
-            loan_id=loan_id,
-            borrower_name=loan["borrower_name"],
-            loan_amount=loan["loan_amount"],
-        )
+            file_hash = self.pdf.generate_hash(file_path)
 
-        file_path = pdf_output["file_path"]
+            # -------------------------------------------------
+            # ❗ DEACTIVATE OLD AGREEMENTS (IMPORTANT)
+            # -------------------------------------------------
+            db.query(Agreement).filter(
+                Agreement.application_id == application_id,
+                Agreement.is_active == True
+            ).update({"is_active": False})
 
-        # Generate hash
-        file_hash = self.pdf.generate_hash(file_path)
+            # -------------------------------------------------
+            # 💾 SAVE AGREEMENT
+            # -------------------------------------------------
+            agreement = Agreement(
+                application_id=application_id,
+                user_id=user_id,
+                version=new_version,
+                agreement_pdf_path=file_path,
+                file_hash=file_hash,
+                is_active=True,
+                esign_status="PENDING"
+            )
 
-        # Save agreement
-        agreement = Agreement(
-            loan_id=loan_id,
-            user_id=1,
-            version=new_version,
-            agreement_pdf_path=file_path,
-            file_hash=file_hash,
-            is_active=True,
-        )
+            db.add(agreement)
 
-        db.add(agreement)
-        db.commit()
-        db.refresh(agreement)
+            # -------------------------------------------------
+            # 🔄 UPDATE APPLICATION STATUS
+            # -------------------------------------------------
+            application.application_status = "AGREEMENT_GENERATED"
 
-        return success_response(
-            "Agreement generated",
-            {
+            db.commit()
+            db.refresh(agreement)
+
+            return {
                 "exists": False,
-                "loan_id": loan_id,
-                "version": new_version,
+                "loan_id": application_id,
                 "pdf_path": file_path,
-                "file_hash": file_hash,
+                "status": agreement.esign_status,
+                "provider_ref": None,
+                "signed_pdf_path": None
             }
-        )
 
-    # VERIFY HASH
-    def verify_hash(self, loan_id: int, db: Session):
+        except SQLAlchemyError as db_err:
+            db.rollback()
+            logger.error(f"[Agreement][DB ERROR]: {str(db_err)}")
+            throw_error("Database error while generating agreement", 500)
 
-        logger.info(f"[Agreement] Verifying hash for loan_id={loan_id}")
-
-        agreement = db.query(Agreement).filter(
-            Agreement.loan_id == loan_id,
-            Agreement.is_active == True
-        ).first()
-
-        if not agreement:
-            throw_error("Agreement not found", 404)
-
-        generated_hash = self.pdf.generate_hash(
-            agreement.agreement_pdf_path
-        )
-
-        if generated_hash != agreement.file_hash:
-            throw_error("Document has been modified", 409)
-
-        return success_response(
-            "Hash verified",
-            {
-                "loan_id": loan_id,
-                "hash": generated_hash
-            }
-        )
+        except Exception as e:
+            db.rollback()
+            logger.error(f"[Agreement][ERROR]: {str(e)}")
+            throw_error("Agreement generation failed", 500)

@@ -1,5 +1,4 @@
 from enum import Enum, IntEnum
-from pydantic import BaseModel
 
 
 def enum_value(value):
@@ -11,6 +10,23 @@ def enum_value(value):
     return value
 
 
+# =====================================================
+# CREDIT / BUREAU
+# =====================================================
+class CreditProvider(str, Enum):
+    SUREPASS = "SUREPASS"
+    KARZA = "KARZA"
+    FINBOX = "FINBOX"
+
+
+class InquiryType(str, Enum):
+    SOFT = "SOFT"
+    HARD = "HARD"
+
+
+# =====================================================
+# LOAN APPLICATION
+# =====================================================
 class LoanPurpose(str, Enum):
     MEDICAL = "MEDICAL"
     EDUCATION = "EDUCATION"
@@ -25,6 +41,7 @@ class LoanApplicationStep(str, Enum):
     DECLARATION = "DECLARATION"
     SUMMARY = "SUMMARY"
     SUBMITTED = "SUBMITTED"
+    COMPLETED = "COMPLETED"
 
 
 class LoanApplicationStatus(str, Enum):
@@ -32,18 +49,36 @@ class LoanApplicationStatus(str, Enum):
     SUBMITTED = "SUBMITTED"
     UNDER_REVIEW = "UNDER_REVIEW"
     APPROVED = "APPROVED"
-    REJECTED = "REJECTED"
+
+    AGREEMENT_GENERATED = "AGREEMENT_GENERATED"
+    ESIGN_COMPLETED = "ESIGN_COMPLETED"
+
     NBFC_APPROVED = "NBFC_APPROVED"
     DISBURSED = "DISBURSED"
+    ACTIVE = "ACTIVE"
     CLOSED = "CLOSED"
 
+    REJECTED = "REJECTED"
 
 
+# =====================================================
+# ELIGIBILITY
+# =====================================================
 class EligibilityStatusEnum(str, Enum):
     ELIGIBLE = "ELIGIBLE"
     REJECTED = "REJECTED"
 
 
+class LoanTenureMonths(IntEnum):
+    THREE = 3
+    SIX = 6
+    NINE = 9
+    TWELVE = 12
+
+
+# =====================================================
+# REFERENCES
+# =====================================================
 class ReferenceRelation(str, Enum):
     FRIEND = "FRIEND"
     BROTHER = "BROTHER"
@@ -52,21 +87,56 @@ class ReferenceRelation(str, Enum):
     MOTHER = "MOTHER"
     SPOUSE = "SPOUSE"
     COLLEAGUE = "COLLEAGUE"
-    
-class LoanTenureMonths(IntEnum):
-    THREE = 3
-    SIX = 6
-    NINE = 9
-    TWELVE = 12
 
+
+# =====================================================
+# DISBURSEMENT / PAYMENT
+# =====================================================
 class DisbursementStatusEnum(str, Enum):
+    PENDING = "PENDING"
     INITIATED = "INITIATED"
+    PROCESSING = "PROCESSING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
     REVERSED = "REVERSED"
-    
-    
+
+
 class PaymentModeEnum(str, Enum):
     BANK = "BANK"
     UPI = "UPI"
 
+
+# =====================================================
+# SUPPORT / COMPLAINTS
+# =====================================================
+class ComplaintCategory(str, Enum):
+    LOGIN_ISSUE = "Login Issue"
+    KYC_ISSUE = "KYC Issue"
+    PAYMENT_ISSUE = "Payment Issue"
+    LOAN_ISSUE = "Loan Issue"
+    TECHNICAL_ISSUE = "Technical Issue"
+    ACCOUNT_ISSUE = "Account Issue"
+    GENERAL_INQUIRY = "General Inquiry"
+    FEEDBACK = "Feedback"
+    OTHER = "Other"
+
+
+class ComplaintPriority(str, Enum):
+    LOW = "Low"
+    MEDIUM = "Medium"
+    HIGH = "High"
+
+
+class ComplaintStatusEnum(str, Enum):
+    OPEN = "Open"
+    IN_PROGRESS = "In Progress"
+    RESOLVED = "Resolved"
+    CLOSED = "Closed"
+
+
+# =====================================================
+# ADMIN
+# =====================================================
+class AdminCreateRole(str, Enum):
+    LENDER = "LENDER"
+    SUPPORT = "SUPPORT"

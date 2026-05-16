@@ -21,7 +21,7 @@ router = APIRouter(
 
 
 # -----------------------------------------------------
-# Save Purpose (USER ONLY - Latest Draft Auto Detect)
+# Save Purpose (USER ONLY)
 # -----------------------------------------------------
 @router.put(
     "/purpose",
@@ -48,7 +48,7 @@ def save_loan_purpose(
 
 
 # -----------------------------------------------------
-# Get Purpose (USER ONLY - Latest Draft Auto Detect)
+# Get Purpose (USER ONLY)
 # -----------------------------------------------------
 @router.get(
     "/purpose",
@@ -64,8 +64,8 @@ def get_loan_purpose(
     )
 
     return LoanApplicationPurposeResponse(
-        application_id=result.application_id,
-        purpose_code=result.purpose_code,
-        purpose_description=result.purpose_description,
+        application_id=result["application_id"],
+        purpose_code=result["purpose_code"],
+        purpose_description=result["purpose_description"],
         message="Purpose fetched successfully",
     )

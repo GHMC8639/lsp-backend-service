@@ -1,11 +1,6 @@
 from sqlalchemy.orm import Session
-from app.models.faq import FAQ
+from models.Support.faq import FAQ
 
 
-class FAQRepository:
-
-    def get_all(self, db: Session):
-        return db.query(FAQ).all()
-
-    def get_by_category(self, db: Session, category: str):
-        return db.query(FAQ).filter(FAQ.category == category).all()
+def get_all_active_faqs(db: Session):
+    return db.query(FAQ).filter(FAQ.is_active == True).all()

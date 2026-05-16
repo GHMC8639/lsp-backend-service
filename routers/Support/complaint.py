@@ -1,93 +1,91 @@
-from fastapi import APIRouter, Depends, HTTPException
+from typing import List, Optional
+
+from fastapi import APIRouter, Depends, Form, File, UploadFile
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-import random
-from typing import List
 
 from core.database import get_db
-from models.Support.complaint import Complaint
-from schemas.Support.complaint_schema import ComplaintCreate, ComplaintResponse
-
-# ✅ ADD THESE
-from core.permissions import user_required
+from core.dependencies import require_roles
 from models.Auth.user import User
+
+from schemas.Support.complaint_schema import (
+    ComplaintCreate,
+    ComplaintResponse,
+    ComplaintDetailResponse,
+)
+
+from services.Support.complaint_service import (
+    register_complaint,
+    list_complaints,
+    get_complaint_detail,
+)
+
+from services.Support.cloudinary_upload_services import upload_support_attachment
+
+from core.enums import ComplaintCategory, ComplaintPriority
+
 
 router = APIRouter(
     prefix="/api/v1/support",
-    tags=["Complaint"]
+    tags=["Complaints"]
 )
 
 
-# ------------------------------------------------
-# CREATE COMPLAINT (USER)
-# ------------------------------------------------
-@router.post("/complaint", response_model=ComplaintResponse, status_code=201)
-def create_complaint(
-    data: ComplaintCreate,
+# =====================================================
+# USER - CREATE COMPLAINT
+# =====================================================
+@router.post("/complaint", response_model=ComplaintResponse)
+async def create_new_complaint(
+    category: ComplaintCategory = Form(...),
+    subject: str = Form(...),
+    description: str = Form(...),
+    priority: ComplaintPriority = Form(ComplaintPriority.MEDIUM),
+    attachment: Optional[UploadFile] = File(None),
     db: Session = Depends(get_db),
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(require_roles("USER")),
 ):
-    complaint_number = "CMP-" + str(random.randint(10000, 99999))
-    sla_deadline = datetime.utcnow() + timedelta(days=30)
+    attachment_url = None
 
-    complaint = Complaint(
-        complaint_number=complaint_number,
-        user_id=current_user.id,  # ✅ FIXED (secure)
-        category=data.category,
-        subject=data.subject,
-        description=data.description,
-        priority=data.priority,
-        status="Open",
-        sla_deadline=sla_deadline,
-        escalated=False
+    if attachment:
+        attachment_url = await upload_support_attachment(
+            attachment=attachment,
+            category=category.value,
+            user_id=current_user.id,
+        )
+
+    data = ComplaintCreate(
+        category=category,
+        subject=subject,
+        description=description,
+        priority=priority,
+        attachment_url=attachment_url,
     )
 
-    db.add(complaint)
-    db.commit()
-    db.refresh(complaint)
+    return register_complaint(
+        db=db,
+        payload=data,
+        current_user=current_user,
+        attachment_path=attachment_url,
+    )
 
-    return complaint
 
-
-# ------------------------------------------------
-# GET ALL COMPLAINTS (ADMIN ONLY)
-# ------------------------------------------------
+# =====================================================
+# USER - GET OWN COMPLAINTS
+# =====================================================
 @router.get("/complaints", response_model=List[ComplaintResponse])
-def get_all_complaints(
+def get_complaint_list(
     db: Session = Depends(get_db),
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(require_roles("USER")),
 ):
-    complaints = db.query(Complaint).all()
-
-    for c in complaints:
-        if c.status not in ["Resolved", "Closed"] and datetime.utcnow() > c.sla_deadline:
-            c.escalated = True
-
-    db.commit()
-    return complaints
+    return list_complaints(db, current_user)
 
 
-# ------------------------------------------------
-# GET SINGLE COMPLAINT
-# ------------------------------------------------
-@router.get("/complaint/{id}", response_model=ComplaintResponse)
-def get_complaint(
-    id: int,
+# =====================================================
+# USER - GET SINGLE COMPLAINT
+# =====================================================
+@router.get("/complaint/{complaint_id}", response_model=ComplaintDetailResponse)
+def get_single_complaint(
+    complaint_id: int,
     db: Session = Depends(get_db),
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(require_roles("USER")),
 ):
-    complaint = db.query(Complaint).filter(Complaint.id == id).first()
-
-    if not complaint:
-        raise HTTPException(status_code=404, detail="Complaint not found")
-
-    # ✅ USER → only own complaint
-    if current_user.role == "USER" and complaint.user_id != current_user.id:
-        raise HTTPException(status_code=403, detail="Access denied")
-
-    # SLA check
-    if complaint.status not in ["Resolved", "Closed"] and datetime.utcnow() > complaint.sla_deadline:
-        complaint.escalated = True
-        db.commit()
-
-    return complaint
+    return get_complaint_detail(db, complaint_id, current_user)

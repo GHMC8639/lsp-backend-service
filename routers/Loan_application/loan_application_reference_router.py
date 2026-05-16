@@ -21,12 +21,9 @@ router = APIRouter(
 
 
 # -----------------------------------------------------
-# Save References (USER ONLY - Auto Draft Detection)
+# SAVE REFERENCES
 # -----------------------------------------------------
-@router.put(
-    "/references",
-    response_model=list[LoanApplicationReferenceResponse],
-)
+@router.put("/references")
 def save_references(
     # Reference 1
     ref1_name: str = Form(...),
@@ -58,7 +55,7 @@ def save_references(
 
 
 # -----------------------------------------------------
-# Get References (USER ONLY - Auto Draft Detection)
+# GET REFERENCES (FIXED)
 # -----------------------------------------------------
 @router.get(
     "/references",
@@ -68,7 +65,10 @@ def get_references(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("USER")),
 ):
-    return LoanApplicationReferenceService.get_references(
+    result = LoanApplicationReferenceService.get_references(
         db=db,
         user_id=current_user.id,
     )
+
+    # ✅ RETURN ONLY LIST
+    return result["references"]

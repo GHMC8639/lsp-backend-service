@@ -1,14 +1,21 @@
 from pydantic import BaseModel, Field, ConfigDict
+from typing import Optional
+from core.enums import ReferenceRelation
 
-# Single reference item
+
+# =====================================================
+# SINGLE REFERENCE ITEM
+# =====================================================
 class ReferenceItem(BaseModel):
     name: str = Field(min_length=2, max_length=100)
     mobile_number: str = Field(min_length=10, max_length=15)
-    relation_type: str = Field(min_length=2, max_length=50)
+    relation_type: ReferenceRelation   # ✅ FIXED (enum)
     is_emergency_contact: bool
 
 
-# Payload with two references
+# =====================================================
+# CREATE REQUEST (JSON BODY)
+# =====================================================
 class LoanApplicationReferencesCreate(BaseModel):
     reference1: ReferenceItem
     reference2: ReferenceItem
@@ -19,13 +26,13 @@ class LoanApplicationReferencesCreate(BaseModel):
                 "reference1": {
                     "name": "Ramesh Kumar",
                     "mobile_number": "9876543210",
-                    "relation_type": "Friend",
+                    "relation_type": "FRIEND",
                     "is_emergency_contact": True
                 },
                 "reference2": {
                     "name": "Suresh Rao",
                     "mobile_number": "9123456789",
-                    "relation_type": "Colleague",
+                    "relation_type": "COLLEAGUE",
                     "is_emergency_contact": False
                 }
             }
@@ -33,12 +40,14 @@ class LoanApplicationReferencesCreate(BaseModel):
     )
 
 
-# Response
+# =====================================================
+# RESPONSE
+# =====================================================
 class LoanApplicationReferenceResponse(BaseModel):
-    id: int
+    id: Optional[int] = None   # ✅ SAFE
     name: str
     mobile_number: str
-    relation_type: str
+    relation_type: ReferenceRelation   # ✅ FIXED
     is_emergency_contact: bool
     is_verified: bool
 

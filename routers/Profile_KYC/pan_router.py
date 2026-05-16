@@ -17,7 +17,7 @@ def verify_pan(
     try:
         result = PANVerificationService.verify_pan(
             db=db,
-            user_id=current_user.id  # 🔥 comes from token
+            user_id=current_user.id  
         )
 
         return PANVerificationResponse(

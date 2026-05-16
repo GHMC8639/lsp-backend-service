@@ -1,14 +1,15 @@
 from sqlalchemy.orm import Session
-from app.models.grievance import Grievance
+from models.Support.grievance import Grievance
+from schemas.Support.grievance_schema import GrievanceOfficerCreate
 
 
-class GrievanceRepository:
+def create_grievance_officer(db: Session, data: GrievanceOfficerCreate):
+    officer = Grievance(**data.model_dump())
+    db.add(officer)
+    db.commit()
+    db.refresh(officer)
+    return officer
 
-    def create(self, db: Session, grievance: Grievance):
-        db.add(grievance)
-        db.commit()
-        db.refresh(grievance)
-        return grievance
 
-    def get_all(self, db: Session):
-        return db.query(Grievance).all()
+def get_grievance_officer(db: Session):
+    return db.query(Grievance).first()

@@ -1,163 +1,172 @@
-from fastapi import APIRouter, Depends, HTTPException, Request, status
-from fastapi.security import OAuth2PasswordRequestForm
+
+from fastapi import APIRouter, Depends, HTTPException, Request
 from sqlalchemy.orm import Session
-from datetime import datetime, timedelta
-from core.database import SessionLocal
+from core.database import get_db
 from models.Auth.user import User
+from models.Auth.user_device import UserDevice
+from core.security import hash_password, create_access_token, create_refresh_token
 from datetime import datetime, timedelta
-from core.config import settings
-
 from models.Auth.user_session import UserSession
+from core.validators import validate_mobile_number, validate_password
 from schemas.Auth.RegisterSchema import RegisterSchema
-from schemas.Auth.SendOTPSchema import SendOTPSchema, VerifyOTPSchema
+from schemas.Auth.SendOTPSchema import VerifyOTPSchema,ResendOTPSchema
+from services.Auth.otp_services import send_otp, resend_otp, verify_otp,PURPOSE_REGISTER
+from models.Auth.otp_verification import OTPVerification
 
-import random
-from core.security import (
-    hash_password,
-    create_access_token,
-    create_refresh_token,
-    validate_mobile,
-    validate_password_length,
-)
-
-from services.Auth.verify_otp_services import (
-    send_otp,
-    resend_otp,
-    verify_otp,
-    remaining_attempts,
-)
 router = APIRouter(
     prefix="/auth",
-    tags=["User Registration process"]
+    tags=["User Registration Process"]
 )
 
-
-# ======================================================
-# DB Dependency
-# ======================================================
-def get_db():
-    db = SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
-
-
-# ======================================================
-# REGISTER (SAVE TEMP DATA IN OTP TABLE)
-# ======================================================
+# ============================
+# REGISTER → SEND OTP
+# ============================
 @router.post("/register")
-def register_user(data: RegisterSchema, db: Session = Depends(get_db)):
+def register_and_send_otp(
+    data: RegisterSchema,
+    db: Session = Depends(get_db),
+):
+    mobile = validate_mobile_number(data.mobile_number)
+    validate_password(data.password)
 
-    validate_mobile(data.mobile_number)
-    validate_password_length(data.password)
-
-    existing_user = db.query(User).filter(
-        User.mobile_number == data.mobile_number
-    ).first()
+    # 1️⃣ Check if mobile is already registered
+    existing_user = (
+        db.query(User)
+        .filter(User.mobile_number == mobile)
+        .first()
+    )
 
     if existing_user:
-        raise HTTPException(status_code=409, detail="User already exists")
+        # 2️⃣ Mobile exists → check device
+        if existing_user.device_id == data.device_id:
+            # 3️⃣ Same device
+            if existing_user.is_verified:
+                raise HTTPException(
+                    status_code=409,
+                    detail="User already registered and verified on this device"
+                )
+            else:
+                raise HTTPException(
+                    status_code=400,
+                    detail="User already registered. Please verify OTP"
+                )
 
-    # 🔥 Send OTP (Cloud Redis)
-    success, message = send_otp(data.mobile_number)
+        # 4️⃣ Same mobile, different device → BLOCK
+        raise HTTPException(
+            status_code=403,
+            detail="This mobile number is already registered on another device"
+        )
 
-    if not success:
-        raise HTTPException(status_code=400, detail=message)
+    # 5️⃣ New mobile → allow registration & send OTP
+    send_otp(
+        db=db,
+        username=data.username,
+        password=data.password,
+        device_id=data.device_id,
+        mobile_number=mobile,
+        purpose=PURPOSE_REGISTER,
+    )
 
     return {
-        "step": "OTP_SENT",
-        "message": message
+        "message": "OTP sent successfully",
+        "next": "verify_otp",
     }
-# ======================================================
-# VERIFY OTP + CREATE USER
-# ======================================================
-@router.post("/verify-otp")
-def verify_otp_api(data: VerifyOTPSchema, db: Session = Depends(get_db)):
+# ============================
+# VERIFY OTP → ACTIVATE USER
+# ============================
+@router.post("/register/verify-otp")
+def verify_register_otp(
+    data: VerifyOTPSchema,
+    db: Session = Depends(get_db),
+):
+    mobile = validate_mobile_number(data.mobile_number)
 
-    # 1️⃣ Verify OTP from Cloud Redis
-    if not verify_otp(data.mobile_number, data.otp):
+    # 1️⃣ Verify OTP
+    verify_otp(
+        db=db,
+        mobile_number=mobile,
+        otp=data.otp,
+        device_id=data.device_id,
+        purpose=PURPOSE_REGISTER,
+    )
 
-        attempts_left = remaining_attempts(data.mobile_number)
-
-        if attempts_left == 0:
-            raise HTTPException(
-                status_code=403,
-                detail="Blocked for 24 hours"
-            )
-
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid OTP. Attempts left: {attempts_left}"
+    # 2️⃣ Fetch VERIFIED OTP
+    otp_row = (
+        db.query(OTPVerification)
+        .filter(
+            OTPVerification.mobile_number == mobile,
+            OTPVerification.purpose == PURPOSE_REGISTER,
+            OTPVerification.otp_status == "VERIFIED",
         )
+        .order_by(OTPVerification.id.desc())
+        .first()
+    )
+    if otp_row.expires_at < datetime.utcnow():
+        raise HTTPException(400, "OTP expired")
+    if not otp_row:
+        raise HTTPException(400, "OTP verification failed")
 
-    # 2️⃣ Check if user already exists
-    user = db.query(User).filter(
-        User.mobile_number == data.mobile_number
-    ).first()
-
-    # 3️⃣ If NOT exist → create new user (registration flow)
+    # 3️⃣ Fetch user
+    user = db.query(User).filter(User.id == otp_row.user_id).first()
     if not user:
-        user = User(
-            mobile_number=data.mobile_number,
-            username=data.username,  # Default username = mobile number
-            password_hash=hash_password(data.password),
-            device_id=data.device_id,
-            role="USER"
-        )
-        db.add(user)
-        db.commit()
-        db.refresh(user)
+        raise HTTPException(404, "User not found")
 
-    # 4️⃣ Generate Tokens
+    if user.is_verified:
+        raise HTTPException(409, "User already verified")
+
+    # 4️⃣ Activate user
+    user.is_verified = True
+    user.is_active = True
+    db.commit()
+
+    # 5️⃣ Register device
+    db.add(
+        UserDevice(
+            user_id=user.id,
+            device_id=otp_row.device_id,
+            created_at=datetime.utcnow(),
+        )
+    )
+
+    db.commit()
+    db.refresh(user)
     access_token = create_access_token(
-        data={"sub": str(user.id)}
+        data={
+            "sub": str(user.id),
+            "role": user.role   # 🔥 IMPORTANT FIX
+        }
     )
 
     refresh_token = create_refresh_token(
-        data={"sub": str(user.id)}
+        data={
+            "sub": str(user.id),
+            "role": user.role
+        }
     )
 
-    expires_at = datetime.utcnow() + timedelta(
-        minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
-    )
 
-    session = UserSession(
-        user_id=user.id,
-        session_token=access_token,
-        refresh_token=refresh_token,
-        is_active=True,
-        expires_at=expires_at,
-        device_id=data.device_id,
-        user_agent="User Registration"
-
-    )
-
-    db.add(session)
-    db.commit()
-    # 6️⃣ Return tokens
-    
     return {
-        "message": "OTP verified successfully",
+        "message": "User registered successfully",
+        "user_id": user.id,
         "access_token": access_token,
         "refresh_token": refresh_token,
-        "token_type": "bearer"
-    }
-# ======================================================
-# RESEND OTP    
-# ======================================================
-
-@router.post("/resend-otp")
-def resend_otp_api(data: SendOTPSchema):
-
-    validate_mobile(data.mobile_number)
-
-    result = resend_otp(data.mobile_number)
-
-    return {
-        "step": "OTP_RESENT",
-        "message": result["message"],
-        "resend_attempts_left":
-            result["remaining_resend_attempts"]
     }
 
+# ============================
+# RESEND REGISTER OTP
+# ============================
+@router.post("/register/resend-otp")
+def resend_register_otp(
+    data: ResendOTPSchema,
+    db: Session = Depends(get_db),
+):
+    mobile = validate_mobile_number(data.mobile_number)
+
+    resend_otp(
+        db=db,
+        mobile_number=mobile,
+        device_id=data.device_id,
+        purpose=PURPOSE_REGISTER,
+    )
+
+    return {"message": "OTP resent successfully"}

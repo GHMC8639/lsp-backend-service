@@ -29,6 +29,6 @@ class LoanApplicationDeclaration(Base):
     updated_at = Column(DateTime, onupdate=func.now())
     is_locked = Column(Boolean, default=False)
 
-    application = relationship(
+    loan_application = relationship(
         "LoanApplication",
         back_populates="declaration")

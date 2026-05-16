@@ -65,3 +65,18 @@ def validate_company_name(v: str) -> str:
     if not v:
         raise ValueError("Company name cannot be empty")
     return v
+
+def validate_credit_score(cls, v):
+    if v < 300 or v > 900:
+        raise ValueError("Credit score must be between 300 and 900")
+    return v
+
+def validate_interest_rate(cls, v):
+    if v <= 0 or v > 100:
+        raise ValueError("Interest rate must be between 0 and 100")
+    return v
+
+def validate_max_amount(cls, v):
+    if v <= 0 or v > 20000:
+        raise ValueError("Max amount must be a positive number")
+    return v

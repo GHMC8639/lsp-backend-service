@@ -1,170 +1,170 @@
 from datetime import datetime
-from fastapi import APIRouter, Depends, HTTPException, Request
+
+from fastapi import APIRouter, Depends, HTTPException, Request, Form
 from sqlalchemy.orm import Session
 
 from core.database import get_db
 from core.dependencies import require_roles
+
 from models.Auth.user import User
 from models.Consent.audit_logs import AuditLog
 from models.Consent.consent_master import ConsentMaster
 from models.Consent.user_consent import UserConsent
-from schemas.Consent.Consent_schemas import (
-    UserConsentRequest,
-    RevokeConsentRequest,
-)
+
+from schemas.Consent.Consent_schemas import ConsentType
+
 
 router = APIRouter(prefix="/consent", tags=["Consent"])
 
 
+def get_client_ip(request: Request) -> str:
+    forwarded = request.headers.get("X-Forwarded-For")
+
+    if forwarded:
+        return forwarded.split(",")[0].strip()
+
+    return request.client.host if request.client else "UNKNOWN"
+
+
 # =====================================================
-# RECORD CONSENT (USER ONLY)
+# USER - RECORD CONSENT
 # =====================================================
 @router.post("/record")
 def record_consent(
-    payload: UserConsentRequest,
     request: Request,
+    consent_type: ConsentType = Form(...),
+    accepted: bool = Form(...),
+    scroll_completed: bool = Form(...),
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("USER")),
 ):
+    user_id = current_user.id
+    ip_address = get_client_ip(request)
+    consent_type_value = consent_type.value
 
-    user_id = current_user.id  # 🔥 from JWT
+    if not scroll_completed:
+        raise HTTPException(
+            status_code=400,
+            detail="Please scroll through the entire document before accepting.",
+        )
 
-    if not payload.scroll_completed:
-        raise HTTPException(400, "Please scroll through the document before accepting.")
+    if not accepted:
+        raise HTTPException(
+            status_code=400,
+            detail="Consent not provided. Please accept to continue.",
+        )
 
-    if not payload.accepted:
-        raise HTTPException(400, "Consent not provided.")
-
-    existing = db.query(UserConsent).filter(
-        UserConsent.user_id == user_id,
-        UserConsent.consent_type == payload.consent_type,
-        UserConsent.revoked_at.is_(None)
-    ).first()
-
-    if existing:
-        raise HTTPException(400, "Active consent already exists.")
-
-    latest_doc = db.query(ConsentMaster).filter(
-        ConsentMaster.type == payload.consent_type,
-        ConsentMaster.active == True
-    ).order_by(ConsentMaster.version.desc()).first()
+    latest_doc = (
+        db.query(ConsentMaster)
+        .filter(
+            ConsentMaster.type == consent_type_value,
+            ConsentMaster.active == True,
+        )
+        .order_by(ConsentMaster.version.desc())
+        .first()
+    )
 
     if not latest_doc:
-        raise HTTPException(404, "Consent document not found.")
+        raise HTTPException(
+            status_code=404,
+            detail="Consent document not found.",
+        )
+
+    existing = (
+        db.query(UserConsent)
+        .filter(
+            UserConsent.user_id == user_id,
+            UserConsent.consent_type == consent_type_value,
+            UserConsent.version == latest_doc.version,
+            UserConsent.accepted == True,
+        )
+        .first()
+    )
+
+    if existing:
+        raise HTTPException(
+            status_code=400,
+            detail="Consent already accepted for the latest version.",
+        )
 
     consent = UserConsent(
         user_id=user_id,
-        consent_type=payload.consent_type,
+        consent_type=consent_type_value,
         version=latest_doc.version,
         accepted=True,
         scroll_completed=True,
-        device_info=payload.device_info,
-        ip_address=request.client.host,
-        accepted_at=datetime.utcnow(),  # 🔥 fixed
+        ip_address=ip_address,
+        accepted_at=datetime.utcnow(),
     )
-
-    db.add(consent)
-    db.commit()
-    db.refresh(consent)
 
     audit = AuditLog(
         action="CONSENT_ACCEPTED",
         user_id=user_id,
-        details=f"{payload.consent_type} v{latest_doc.version} accepted from IP {request.client.host}"
+        details=f"{consent_type_value} v{latest_doc.version} accepted from IP {ip_address}",
     )
 
-    db.add(audit)
-    db.commit()
+    try:
+        db.add(consent)
+        db.add(audit)
+        db.commit()
+        db.refresh(consent)
+
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(
+            status_code=500,
+            detail=f"Failed to record consent: {str(e)}",
+        )
 
     return {
         "status": "success",
-        "message": "Consent recorded successfully."
+        "message": "Consent recorded successfully.",
+        "data": {
+            "user_id": user_id,
+            "consent_type": consent_type_value,
+            "version": latest_doc.version,
+            "accepted": True,
+            "scroll_completed": True,
+            "ip_address": ip_address,
+            "accepted_at": consent.accepted_at,
+        },
     }
 
 
 # =====================================================
-# CONSENT HISTORY (USER ONLY)
+# USER - CONSENT HISTORY
 # =====================================================
 @router.get("/history")
 def get_consent_history(
     db: Session = Depends(get_db),
     current_user: User = Depends(require_roles("USER")),
 ):
+    user_id = current_user.id
 
-    history = db.query(UserConsent).filter(
-        UserConsent.user_id == current_user.id
-    ).all()
+    user_exists = db.query(User).filter(User.id == user_id).first()
 
-    if not history:
-        return {"message": "No consent history found."}
+    if not user_exists:
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid user_id. User does not exist.",
+        )
 
-    return history
-
-
-# =====================================================
-# REVOKE CONSENT (USER ONLY)
-# =====================================================
-@router.post("/revoke")
-def revoke_consent(
-    data: RevokeConsentRequest,
-    request: Request,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("USER")),
-):
-
-    consent = db.query(UserConsent).filter(
-        UserConsent.user_id == current_user.id,
-        UserConsent.consent_type == data.consent_type,
-        UserConsent.revoked_at.is_(None)
-    ).first()
-
-    if not consent:
-        raise HTTPException(404, "No active consent found to revoke")
-
-    consent.revoked_at = datetime.utcnow()
-    db.commit()
-    db.refresh(consent)
-
-    audit_log = AuditLog(
-        action="CONSENT_REVOKED",
-        user_id=current_user.id,
-        details=f"Consent '{data.consent_type}' revoked from IP {request.client.host}"
+    history = (
+        db.query(UserConsent)
+        .filter(UserConsent.user_id == user_id)
+        .order_by(UserConsent.accepted_at.desc())
+        .all()
     )
 
-    db.add(audit_log)
-    db.commit()
-
-    return {
-        "message": "Consent revoked successfully",
-        "consent_id": consent.id
-    }
-
-
-# =====================================================
-# CHECK CONSENT STATUS (USER ONLY)
-# =====================================================
-@router.get("/status")
-def check_consent_status(
-    consent_type: str,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("USER")),
-):
-
-    consent = db.query(UserConsent).filter(
-        UserConsent.user_id == current_user.id,
-        UserConsent.consent_type == consent_type,
-        UserConsent.revoked_at.is_(None)
-    ).order_by(UserConsent.accepted_at.desc()).first()
-
-    if not consent:
+    if not history:
         return {
-            "active": False,
-            "message": "No active consent found"
+            "status": "success",
+            "message": "No consent history found for this user.",
+            "data": [],
         }
 
     return {
-        "active": True,
-        "version": consent.version,
-        "accepted_at": consent.accepted_at,
-        "revoked_at": consent.revoked_at
+        "status": "success",
+        "message": "Consent history fetched successfully.",
+        "data": history,
     }

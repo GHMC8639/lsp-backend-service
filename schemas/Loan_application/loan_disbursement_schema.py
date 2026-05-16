@@ -5,52 +5,92 @@ from typing import Optional
 
 from core.enums import (
     PaymentModeEnum,
-    DisbursementStatusEnum)
+    DisbursementStatusEnum
+)
 
 
+# =====================================================
+# REQUEST: Disbursement
+# =====================================================
 class DisbursementRequestSchema(BaseModel):
     payment_mode: PaymentModeEnum = Field(
         ...,
-        description="Select payout method (BANK or UPI)")
+        description="Select payout method (BANK or UPI)",
+        example="BANK"
+    )
 
 
+# =====================================================
+# RESPONSE: Disbursement
+# =====================================================
 class DisbursementResponseSchema(BaseModel):
 
     id: int = Field(
         ...,
-        description="Disbursement record ID")
+        description="Disbursement record ID",
+        example=1
+    )
 
     application_id: int = Field(
         ...,
-        description="Loan application ID")
+        description="Loan application ID",
+        example=101
+    )
 
     amount: Decimal = Field(
         ...,
-        description="Net amount disbursed to user")
+        description="Net amount disbursed to user",
+        example=15000.00
+    )
 
     payment_mode: PaymentModeEnum = Field(
         ...,
-        description="Selected payout method")
+        description="Selected payout method (BANK / UPI)",
+        example="BANK"
+    )
 
     payment_status: DisbursementStatusEnum = Field(
         ...,
-        description="Current status of disbursement")
+        description="Current status of disbursement",
+        example="SUCCESS"
+    )
 
     payment_reference_id: Optional[str] = Field(
         None,
-        description="Reference ID returned by payment gateway (if successful)")
+        description="Reference ID from payment gateway",
+        example="RAZORPAY_123456"
+    )
+
+    payment_provider: Optional[str] = Field(
+        None,
+        description="Payment provider used",
+        example="RAZORPAY"
+    )
+
+    failure_reason: Optional[str] = Field(
+        None,
+        description="Reason for failure (only if FAILED)",
+        example="Bank server timeout"
+    )
 
     initiated_at: Optional[datetime] = Field(
         None,
-        description="Time when disbursement was initiated")
+        description="Time when disbursement was initiated",
+        example="2026-04-06T10:30:00Z"
+    )
 
     completed_at: Optional[datetime] = Field(
         None,
-        description="Time when disbursement was completed")
+        description="Time when disbursement was completed",
+        example="2026-04-06T10:32:00Z"
+    )
 
     retry_allowed: Optional[bool] = Field(
         None,
-        description="Indicates whether retry is allowed (true if FAILED)")
+        description="True if retry is allowed (only when FAILED)",
+        example=False
+    )
 
     class Config:
         from_attributes = True
+        use_enum_values = True

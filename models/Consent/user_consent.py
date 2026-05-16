@@ -14,12 +14,9 @@ class UserConsent(Base):
 
     accepted = Column(Boolean, nullable=False)
     scroll_completed = Column(Boolean, nullable=False)
-
-    device_info = Column(String(255))
     ip_address = Column(String(50))
 
     accepted_at = Column(DateTime(timezone=True), server_default=func.now(),nullable=False)
-    revoked_at = Column(DateTime(timezone=True), nullable=True)
 
     __table_args__ = (
         Index("idx_user_consent_user_id", "user_id"),

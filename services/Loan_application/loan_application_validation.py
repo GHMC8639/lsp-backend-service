@@ -4,73 +4,101 @@ from fastapi import HTTPException, status
 from models.Loan_application.loan_application_references import LoanApplicationReference
 from models.Loan_application.loan_application_steps import LoanApplicationStepTracker
 from models.Loan_application.loan_application import LoanApplication
-from core.enums import LoanApplicationStatus, LoanApplicationStep, enum_value
+
+from core.enums import LoanApplicationStatus, enum_value
 
 
 def validate_final_submission(
     db: Session,
     application: LoanApplication,
-    tracker: LoanApplicationStepTracker):
+    tracker: LoanApplicationStepTracker
+):
 
+    # =====================================================
+    # 1️⃣ Check application is still draft (ENUM SAFE)
+    # =====================================================
     if application.application_status != enum_value(LoanApplicationStatus.DRAFT):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Application already submitted")
+            detail="Application already submitted"
+        )
 
+    # =====================================================
+    # 2️⃣ Validate steps completion
+    # =====================================================
     if not tracker.loan_details_completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "pending_step": enum_value(LoanApplicationStep.LOAN_DETAILS),
+                "pending_step": "LOAN_DETAILS",
                 "message": "Loan details not completed"
-            })
+            }
+        )
 
     if not tracker.purpose_completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "pending_step": enum_value(LoanApplicationStep.PURPOSE),
+                "pending_step": "PURPOSE",
                 "message": "Loan purpose not completed"
-            })
+            }
+        )
 
     if not tracker.references_completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "pending_step": enum_value(LoanApplicationStep.REFERENCES),
+                "pending_step": "REFERENCES",
                 "message": "References not completed"
-            })
+            }
+        )
 
     if not tracker.declaration_completed:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "pending_step": enum_value(LoanApplicationStep.DECLARATION),
+                "pending_step": "DECLARATION",
                 "message": "Declaration not completed"
-            })
+            }
+        )
 
-    # check declaration record exists and locked
-    if not application.declaration or not application.declaration.is_locked:
+    # =====================================================
+    # 3️⃣ Validate user reached SUMMARY step
+    # =====================================================
+    if tracker.current_step != "SUMMARY":
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail={
-                "pending_step": enum_value(LoanApplicationStep.DECLARATION),
-                "message": "Declaration confirmation pending"
-            })
+                "pending_step": "SUMMARY",
+                "message": "Please review application before submission"
+            }
+        )
 
+    # =====================================================
+    # 4️⃣ Validate references count
+    # =====================================================
     references = (
         db.query(LoanApplicationReference)
         .filter(LoanApplicationReference.application_id == application.id)
-        .all())
+        .all()
+    )
 
     if len(references) != 2:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Exactly 2 references are required")
+            detail="Exactly 2 references are required"
+        )
 
+    # =====================================================
+    # 5️⃣ Validate references verification
+    # =====================================================
     if not all(ref.is_verified for ref in references):
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
-            detail="All references must be OTP verified")
+            detail="All references must be OTP verified"
+        )
 
+    # =====================================================
+    # ✅ FINAL SUCCESS
+    # =====================================================
     return True

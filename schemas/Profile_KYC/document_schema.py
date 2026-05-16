@@ -1,7 +1,7 @@
 from pydantic import BaseModel
 from typing import Optional, List
 from enum import Enum
- 
+
 class IncomeTypeEnum(str, Enum):
     SALARY_SLIP    = "SALARY_SLIP"
     BANK_STATEMENT = "BANK_STATEMENT"
@@ -11,36 +11,48 @@ class DocumentStatusEnum(str, Enum):
     UNDER_REVIEW = "UNDER_REVIEW"
     APPROVED     = "APPROVED"
     REJECTED     = "REJECTED"
- 
+
+class ReviewAction(str, Enum):
+    APPROVE = "APPROVE"
+    REJECT  = "REJECT"
+
 class SingleDocumentResult(BaseModel):
-    document_type: str
-    file_name:     str
-    file_size:     int
-    status:        str
-    uploaded_at:   str
-    message:       str
- 
+    document_type:  str
+    file_name:      str
+    file_size:      int
+    status:         str
+    uploaded_at:    str
+    match_score:    Optional[float] = None
+    ocr_verified:   Optional[int]   = None   # 1 = passed, 0 = failed
+    failed_reasons: List[str]       = []
+    message:        str
+
 class BulkDocumentUploadResponse(BaseModel):
     user_id:               int
     email:                 str
     uploaded_documents:    List[SingleDocumentResult]
     total_uploaded:        int
-    skipped_documents:     List[str]
-    missing_documents:     List[str]
+    skipped_approved:      List[str]   
+    skipped_empty:         List[str]  
+    missing_documents:     List[str]  
     all_required_uploaded: bool
+    document_status:       str
+    kyc_status:            str
     message:               str
- 
+
 class DocumentListItem(BaseModel):
-    id:                    int
-    document_type:         str
-    file_name:             str
-    file_size:             int
-    status:                str
-    uploaded_at:           str
-    reviewed_at:           Optional[str]   = None
-    admin_remarks:         Optional[str]   = None
- 
- 
+    id:             int
+    document_type:  str
+    file_name:      str
+    file_size:      int
+    status:         str
+    match_score:    Optional[float] = None
+    ocr_verified:   Optional[int]   = None
+    uploaded_at:    str
+    reviewed_at:    Optional[str]   = None
+    admin_remarks:  Optional[str]   = None
+    failed_reasons: List[str]       = []
+
 class AllDocumentsResponse(BaseModel):
     user_id:            int
     email:              str
@@ -49,12 +61,14 @@ class AllDocumentsResponse(BaseModel):
     required_documents: List[str]
     missing_documents:  List[str]
     all_approved:       bool
- 
+
+# ── Admin ──────────────────────────────────────────────────────────────────────
+
 class DocumentApprovalRequest(BaseModel):
     document_id:   int
     status:        DocumentStatusEnum
     admin_remarks: Optional[str] = None
- 
+
 class DocumentApprovalResponse(BaseModel):
     message:         str
     document_id:     int
@@ -66,24 +80,17 @@ class PendingDocumentItem(BaseModel):
     id:            int
     user_id:       int
     email:         str
-    full_name:     str
     document_type: str
     file_name:     str
     file_path:     str
     file_size:     int
+    match_score:   Optional[float] = None
     uploaded_at:   str
     status:        str
-
 
 class PendingDocumentsResponse(BaseModel):
     pending_documents: List[PendingDocumentItem]
     total_pending:     int
-
-
-class DocumentReviewRequest(BaseModel):
-    document_id:   int
-    action:        str              # "APPROVE" or "REJECT"
-    admin_remarks: Optional[str] = None
 
 class DocumentReviewResponse(BaseModel):
     document_id:   int
@@ -93,7 +100,6 @@ class DocumentReviewResponse(BaseModel):
     message:       str
     kyc_completed: bool = False
 
- 
 class UserKYCDetails(BaseModel):
     user_id:             int
     email:               str
@@ -106,7 +112,6 @@ class UserKYCDetails(BaseModel):
     document_status:     str
     kyc_status:          str
     created_at:          str
-    pan_verified_at:     Optional[str]
-    aadhaar_verified_at: Optional[str]
-    bank_verified_at:    Optional[str]
- 
+    pan_verified_at:     Optional[str] = None
+    aadhaar_verified_at: Optional[str] = None
+    bank_verified_at:    Optional[str] = None

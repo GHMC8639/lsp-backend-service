@@ -19,6 +19,10 @@ class UserRepository:
     @staticmethod
     def get_by_pan_number(db: Session, pan_number: str) -> Optional[UserProfile]:
         return db.query(UserProfile).filter(UserProfile.pan_number == pan_number).first()
+    
+    @staticmethod
+    def get_by_aadhaar_number(db: Session, aadhaar_number: str) -> Optional[UserProfile]:
+        return db.query(UserProfile).filter(UserProfile.aadhaar_number == aadhaar_number).first()
 
     @staticmethod
     def create_user(db: Session, user: UserProfile) -> UserProfile:
@@ -39,15 +43,11 @@ class UserRepository:
 
     @staticmethod
     def get_all_users(db: Session, limit: int = 50, offset: int = 0) -> List[UserProfile]:
-        return db.query(UserProfile).order_by(
-            UserProfile.created_at.desc()
-        ).offset(offset).limit(limit).all()
+        return db.query(UserProfile).order_by( UserProfile.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
     def get_users_by_kyc_status(db: Session, kyc_status: str, limit: int = 50, offset: int = 0) -> List[UserProfile]:
-        return db.query(UserProfile).filter(
-            UserProfile.kyc_status == kyc_status
-        ).order_by(UserProfile.created_at.desc()).offset(offset).limit(limit).all()
+        return db.query(UserProfile).filter( UserProfile.kyc_status == kyc_status).order_by(UserProfile.created_at.desc()).offset(offset).limit(limit).all()
 
     @staticmethod
     def count_all_users(db: Session) -> int:

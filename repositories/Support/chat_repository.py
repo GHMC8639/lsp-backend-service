@@ -1,14 +1,20 @@
 from sqlalchemy.orm import Session
-from app.models.chat import Chat
+from models.Support.chat import ChatMessage
 
 
-class ChatRepository:
+def create_chat_message(db: Session, user_id: int, message: str, sender: str):
+    chat = ChatMessage(
+        user_id=user_id,
+        message=message,
+        sender=sender
+    )
 
-    def create_message(self, db: Session, chat: Chat):
-        db.add(chat)
-        db.commit()
-        db.refresh(chat)
-        return chat
+    db.add(chat)
+    db.commit()
+    db.refresh(chat)
 
-    def get_chat_history(self, db: Session, user_id: int):
-        return db.query(Chat).filter(Chat.user_id == user_id).all()
+    return chat
+
+
+def get_chat_history_by_user(db: Session, user_id: int):
+    return db.query(ChatMessage).filter(ChatMessage.user_id == user_id).all()

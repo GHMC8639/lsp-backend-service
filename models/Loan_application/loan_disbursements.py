@@ -30,6 +30,6 @@ class LoanDisbursement(Base):
     completed_at = Column(DateTime, nullable=True)
     retry_count = Column(Integer, default=0)
     last_retry_at = Column(DateTime, nullable=True)
-    application = relationship(
+    loan_application = relationship(
         "LoanApplication",
         back_populates="disbursements")

@@ -10,7 +10,6 @@ def create_default_super_admin(
     password: str,
     device_id: str
 ):
-    print("🚀 Checking/Creating Super Admin...")
 
     # ✅ Check using BOTH username & mobile
     existing = db.query(User).filter(
@@ -19,7 +18,6 @@ def create_default_super_admin(
     ).first()
 
     if existing:
-        print("⚠️ Super Admin already exists:", existing.username)
         return existing
 
     # ✅ Create new admin
@@ -29,7 +27,8 @@ def create_default_super_admin(
         password_hash=hash_password(password),
         device_id=device_id,
         role="SUPER_ADMIN",
-        status="active"
+        is_active=True,
+        is_verified=True
     )
 
     try:
@@ -37,10 +36,7 @@ def create_default_super_admin(
         db.commit()
         db.refresh(super_admin)
 
-        print("✅ Super Admin CREATED successfully:", super_admin.id)
 
     except Exception as e:
         db.rollback()
-        print("❌ Error creating Super Admin:", e)
-
     return super_admin

@@ -4,229 +4,157 @@ import random
 import hashlib
 from fastapi import HTTPException
 
-from models.Loan_application.loan_application_references_otp import ReferenceMobileOTP
-from models.Loan_application.loan_application_steps import LoanApplicationStepTracker
+from core.sms import send_sms_msg91
+from core.config import settings
+
 from models.Loan_application.loan_application import LoanApplication
+from models.Loan_application.loan_application_steps import LoanApplicationStepTracker
+from models.Loan_application.loan_application_references import LoanApplicationReference
+
 from repositories.Loan_application.loan_application_reference_repo import (
     LoanApplicationReferenceRepository
 )
+
 from core.enums import LoanApplicationStep, enum_value
 
 
 COOLDOWN_SECONDS = 30
-MAX_OTP_PER_IP_10_MIN = 5
-OTP_EXPIRY_MINUTES = 5
+OTP_EXPIRY_SECONDS = 300
 MAX_ATTEMPTS = 3
 
 
 class ReferenceOTPService:
 
     # =====================================================
-    # SEND OTP (AUTO DRAFT + MOBILE)
+    # SEND OTP (DB BASED)
     # =====================================================
     @staticmethod
-    def send_reference_otp(
-        db: Session,
-        user_id: int,
-        mobile_number: str,
-        client_ip: str
-    ):
+    def send_reference_otp(db: Session, user_id: int, mobile_number: str, client_ip: str):
 
-        # 1️⃣ Get latest draft
         application = db.query(LoanApplication).filter(
             LoanApplication.user_profile_id == user_id,
             LoanApplication.is_submitted == False
         ).order_by(LoanApplication.id.desc()).first()
 
         if not application:
-            raise HTTPException(
-                status_code=404,
-                detail="No active draft application found"
-            )
+            raise HTTPException(404, "No active draft application found")
 
-        # 2️⃣ Find reference under this application
         references = LoanApplicationReferenceRepository.get_by_application_id(
             db, application.id
         )
 
-        reference = next(
-            (r for r in references if r.mobile_number == mobile_number),
-            None
-        )
+        reference = next((r for r in references if r.mobile_number == mobile_number), None)
 
         if not reference:
-            raise HTTPException(
-                status_code=404,
-                detail="Reference not found for this application"
-            )
+            raise HTTPException(404, "Reference not found")
 
-        now = datetime.now(timezone.utc)
+        now = datetime.utcnow()
 
-        # 3️⃣ Cooldown
-        cooldown_time = now - timedelta(seconds=COOLDOWN_SECONDS)
+        # 🔥 COOLDOWN CHECK
+        if reference.otp_last_sent_at and (
+            now - reference.otp_last_sent_at
+        ).total_seconds() < COOLDOWN_SECONDS:
+            raise HTTPException(400, "Wait before requesting OTP")
 
-        recent_otp = db.query(ReferenceMobileOTP).filter(
-            ReferenceMobileOTP.reference_id == reference.id,
-            ReferenceMobileOTP.created_at >= cooldown_time,
-            ReferenceMobileOTP.is_used == False
-        ).first()
-
-        if recent_otp:
-            raise HTTPException(
-                status_code=400,
-                detail="Please wait before requesting OTP again"
-            )
-
-        # 4️⃣ IP rate limit
-        ten_min_ago = now - timedelta(minutes=10)
-
-        otp_count = db.query(ReferenceMobileOTP).filter(
-            ReferenceMobileOTP.ip_address == client_ip,
-            ReferenceMobileOTP.created_at >= ten_min_ago
-        ).count()
-
-        if otp_count >= MAX_OTP_PER_IP_10_MIN:
-            raise HTTPException(
-                status_code=429,
-                detail="Too many OTP requests from this IP"
-            )
-
-        # 5️⃣ Invalidate old unused OTPs
-        db.query(ReferenceMobileOTP).filter(
-            ReferenceMobileOTP.reference_id == reference.id,
-            ReferenceMobileOTP.is_used == False
-        ).update({"is_used": True})
-
-        # 6️⃣ Generate OTP
+        # 🔥 GENERATE OTP
         otp_plain = str(random.randint(100000, 999999))
         hashed_otp = hashlib.sha256(otp_plain.encode()).hexdigest()
 
-        new_otp = ReferenceMobileOTP(
-            reference_id=reference.id,
-            otp_code=hashed_otp,
-            expires_at=now + timedelta(minutes=OTP_EXPIRY_MINUTES),
-            attempts=0,
-            is_used=False,
-            ip_address=client_ip
-        )
+        # 🔥 STORE IN DB
+        reference.otp_hash = hashed_otp
+        reference.otp_attempts = 0
+        reference.otp_expires_at = now + timedelta(seconds=OTP_EXPIRY_SECONDS)
+        reference.otp_last_sent_at = now
 
-        db.add(new_otp)
         db.commit()
 
-        print(f"Reference OTP (Dev Mode): {otp_plain}")
+        # DEV MODE
+        if settings.ENV.lower() == "dev":
+            print(f"\n📲 Reference OTP for {mobile_number}: {otp_plain}\n")
+
+        # PROD MODE
+        else:
+            try:
+                send_sms_msg91(mobile_number, otp_plain)
+            except Exception as e:
+                raise HTTPException(500, f"Failed to send OTP: {str(e)}")
 
         return {"message": "OTP sent successfully"}
 
-
     # =====================================================
-    # VERIFY OTP (AUTO DRAFT + AUTO REFERENCE)
+    # VERIFY OTP
     # =====================================================
     @staticmethod
     def verify_reference_otp(
         db: Session,
         user_id: int,
         otp_code: str,
-        client_ip: str
+        client_ip: str = None
     ):
 
-        now = datetime.now(timezone.utc)
-
-        # 1️⃣ Get latest draft
         application = db.query(LoanApplication).filter(
             LoanApplication.user_profile_id == user_id,
             LoanApplication.is_submitted == False
         ).order_by(LoanApplication.id.desc()).first()
 
         if not application:
-            raise HTTPException(
-                status_code=404,
-                detail="No active draft application found"
-            )
+            raise HTTPException(404, "No active draft application found")
 
-        # 2️⃣ Get all references
         references = LoanApplicationReferenceRepository.get_by_application_id(
             db, application.id
         )
 
-        if not references:
-            raise HTTPException(
-                status_code=404,
-                detail="No references found"
-            )
+        reference = next(
+            (r for r in references if not r.is_verified),
+            None
+        )
 
-        reference_ids = [ref.id for ref in references]
+        if not reference:
+            raise HTTPException(400, "No pending reference verification")
 
-        # 3️⃣ Get latest active OTP among references
-        otp = db.query(ReferenceMobileOTP).filter(
-            ReferenceMobileOTP.reference_id.in_(reference_ids),
-            ReferenceMobileOTP.is_used == False
-        ).order_by(
-            ReferenceMobileOTP.created_at.desc()
-        ).first()
+        now = datetime.utcnow()
 
-        if not otp:
-            raise HTTPException(
-                status_code=400,
-                detail="No active OTP found"
-            )
+        # 🔥 EXPIRED
+        if not reference.otp_expires_at or reference.otp_expires_at < now:
+            raise HTTPException(400, "OTP expired")
 
-        # 4️⃣ Expiry check
-        if otp.expires_at < now:
-            otp.is_used = True
-            db.commit()
-            raise HTTPException(
-                status_code=400,
-                detail="OTP expired"
-            )
+        # 🔥 MAX ATTEMPTS
+        if reference.otp_attempts >= MAX_ATTEMPTS:
+            raise HTTPException(400, "Too many attempts")
 
-        # 5️⃣ Attempt limit
-        if otp.attempts >= MAX_ATTEMPTS:
-            otp.is_used = True
-            db.commit()
-            raise HTTPException(
-                status_code=400,
-                detail="OTP attempts exceeded"
-            )
-
-        # 6️⃣ Verify
         hashed_input = hashlib.sha256(otp_code.encode()).hexdigest()
 
-        if otp.otp_code != hashed_input:
-            otp.attempts += 1
+        if hashed_input != reference.otp_hash:
+            reference.otp_attempts += 1
             db.commit()
-            raise HTTPException(
-                status_code=400,
-                detail="Invalid OTP"
-            )
+            raise HTTPException(400, "Invalid OTP")
 
         # ✅ SUCCESS
-        otp.is_used = True
-        otp.verified_at = now
-        otp.reference.is_verified = True
+        reference.is_verified = True
+        reference.otp_hash = None
+        reference.otp_attempts = 0
 
         db.commit()
-        db.refresh(otp.reference)
+        db.refresh(reference)
+
+        if client_ip:
+            print(f"✅ OTP verified for reference {reference.id} from IP {client_ip}")
 
         ReferenceOTPService.update_application_step_if_references_verified(
-            db,
-            otp.reference.application_id
+            db, reference.application_id
         )
 
         return {
-            "reference_id": otp.reference_id,
+            "reference_id": reference.id,
             "verified": True,
-            "verified_at": otp.verified_at
+            "verified_at": datetime.now(timezone.utc)
         }
 
-
     # =====================================================
-    # AUTO STEP UPDATE
+    # STEP UPDATE
     # =====================================================
     @staticmethod
-    def update_application_step_if_references_verified(
-        db: Session,
-        application_id: int
-    ):
+    def update_application_step_if_references_verified(db: Session, application_id: int):
 
         references = LoanApplicationReferenceRepository.get_by_application_id(
             db, application_id

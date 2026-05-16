@@ -26,7 +26,7 @@ class LoanStatusHistory(Base):
     )
 
     # ✅ THIS LINE MUST EXIST (CRITICAL)
-    application = relationship(
+    loan_application = relationship(
         "LoanApplication",
         back_populates="status_history"
     )

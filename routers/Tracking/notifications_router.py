@@ -7,7 +7,7 @@ from services.Tracking.notification_service import NotificationService
 from schemas.Tracking.notification_schemas import NotificationResponse
 
 # ✅ USE THIS INSTEAD
-from core.permissions import user_required
+from core.dependencies import require_roles
 from models.Auth.user import User
 
 
@@ -22,7 +22,7 @@ def get_user_notifications(
     db: Session = Depends(get_db),
 
     # ✅ RBAC added
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(require_roles("USER", "ADMIN", "SUPER_ADMIN"))
 ):
     return NotificationService.get_user_notifications(
         db=db,

@@ -7,8 +7,7 @@ from core.dependencies import require_roles
 from models.Auth.user import User
 from services.Eligibility.eligibility_service import (
     EligibilityService,
-    CREDIT_SCORE_TIERS,
-    get_apr
+    CREDIT_SCORE_TIERS
 )
 
 router = APIRouter(
@@ -16,10 +15,6 @@ router = APIRouter(
     tags=["Loan Eligibility"]
 )
 
-
-# =====================================================
-# CHECK ELIGIBILITY FOR LOGGED-IN USER
-# =====================================================
 @router.post("/check")
 def check_loan_eligibility(
     db: Session = Depends(get_db),
@@ -46,9 +41,6 @@ def check_loan_eligibility(
 
     status = eligibility.eligibility_status
 
-    # =====================================
-    # REJECTED CASE
-    # =====================================
     if status == "REJECTED":
         return {
             "user_id": current_user.id,
@@ -68,9 +60,6 @@ def check_loan_eligibility(
             "message": "You are not eligible for a loan based on your current credit score."
         }
 
-    # =====================================
-    # APPROVED CASE
-    # =====================================
     approved_amount = float(eligibility.max_eligible_amount or 0)
 
     return {
@@ -78,11 +67,10 @@ def check_loan_eligibility(
         "eligibility_status": status,
         "loan_offer": {
             "approved_amount": approved_amount,
-            "annual_interest_rate": get_apr(),
         },
         "credit_summary": {
             "current_score": eligibility.credit_score_used,
             "bureau": eligibility.bureau_name,
         },
-        "message": "You are eligible for a loan. Proceed to EMI calculation."
+        "message": "You are eligible for a loan. Proceed to select a lender."
     }

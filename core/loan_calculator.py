@@ -2,31 +2,27 @@ from decimal import Decimal, ROUND_HALF_UP
 from dateutil.relativedelta import relativedelta
 from datetime import date
 
-
-# ==============================
-# CONFIG
-# ==============================
-
 MIN_LOAN_AMOUNT = Decimal("5000")
 MAX_LOAN_AMOUNT = Decimal("20000")
 
 ALLOWED_TENURES = [3, 6, 9, 12]
 
-ANNUAL_INTEREST_RATE = Decimal("12")   # %
-PROCESSING_FEE_PERCENT = Decimal("5")  # %
-GST_RATE = Decimal("18")               # %
+PROCESSING_FEE_PERCENT = Decimal("5")
+GST_RATE = Decimal("18")
 
 
-# ==============================
-# VALIDATION
-# ==============================
+def to_decimal(value):
+    if isinstance(value, Decimal):
+        return value
+    return Decimal(str(value))
+
 
 def validate_loan_request(principal, tenure_months) -> Decimal:
     if principal is None or tenure_months is None:
         raise ValueError("Loan amount and tenure are required")
 
     try:
-        principal = Decimal(str(principal))
+        principal = to_decimal(principal)
     except Exception:
         raise ValueError("Loan amount must be a valid number")
 
@@ -41,11 +37,10 @@ def validate_loan_request(principal, tenure_months) -> Decimal:
     return principal
 
 
-# ==============================
-# EMI CALCULATION
-# ==============================
-
 def calculate_emi(principal: Decimal, annual_rate: Decimal, tenure: int) -> Decimal:
+    principal = to_decimal(principal)
+    annual_rate = to_decimal(annual_rate)
+
     monthly_rate = annual_rate / Decimal("100") / Decimal("12")
 
     if monthly_rate == 0:
@@ -61,11 +56,9 @@ def calculate_emi(principal: Decimal, annual_rate: Decimal, tenure: int) -> Deci
     return emi.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
-# ==============================
-# PROCESSING FEE + GST
-# ==============================
-
 def calculate_processing_fee(principal: Decimal) -> dict:
+    principal = to_decimal(principal)
+
     processing_fee = (
         principal * PROCESSING_FEE_PERCENT / Decimal("100")
     ).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
@@ -85,16 +78,15 @@ def calculate_processing_fee(principal: Decimal) -> dict:
     }
 
 
-# ==============================
-# AMORTIZATION SCHEDULE
-# ==============================
-
 def generate_schedule(
     principal: Decimal,
     annual_rate: Decimal,
     tenure: int,
     first_emi_date: date
 ):
+    principal = to_decimal(principal)
+    annual_rate = to_decimal(annual_rate)
+
     emi_fixed = calculate_emi(principal, annual_rate, tenure)
 
     monthly_rate = annual_rate / Decimal("100") / Decimal("12")
@@ -114,12 +106,8 @@ def generate_schedule(
             Decimal("0.01"), rounding=ROUND_HALF_UP
         )
 
-        # LAST EMI ADJUSTMENT
         if emi_number == tenure:
-            principal_component = opening
-            interest = (opening * monthly_rate).quantize(
-                Decimal("0.01"), rounding=ROUND_HALF_UP
-            )
+            principal_component = opening  # adjust last EMI
 
         emi_to_use = (principal_component + interest).quantize(
             Decimal("0.01"), rounding=ROUND_HALF_UP
@@ -130,48 +118,43 @@ def generate_schedule(
         )
         closing = max(closing, Decimal("0.00"))
 
-        gst_on_interest = (interest * GST_RATE / Decimal("100")).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+        # gst_on_interest = (PROCESSING_FEE_PERCENT * GST_RATE / Decimal("100")).quantize(
+        #     Decimal("0.01"), rounding=ROUND_HALF_UP
+        # )
 
         due_date = first_emi_date + relativedelta(months=emi_number - 1)
-
-        # Safe date handling (avoid Feb issues)
         due_date = due_date.replace(day=min(first_emi_date.day, 28))
 
         schedule.append({
             "emi_number": emi_number,
             "due_date": due_date,
-            "opening_principal": opening,
-            "principal_component": principal_component,
-            "interest_component": interest,
-            "gst_on_interest": gst_on_interest,
-            "emi_amount": emi_to_use,
-            "closing_principal": closing
+            "opening_principal": float(opening),
+            "principal_component": float(principal_component),
+            "interest_component": float(interest),
+            # "gst_on_interest": float(gst_on_interest),
+            "emi_amount": float(emi_to_use),
+            "closing_principal": float(closing)
         })
 
         remaining = closing
 
     return schedule
 
-
-# ==============================
-# LOAN SUMMARY (MAIN FUNCTION)
-# ==============================
-
 def calculate_loan_summary(
     principal,
+    interest_rate,
     tenure_months,
     first_emi_date: date
 ) -> dict:
 
     principal = validate_loan_request(principal, tenure_months)
+    interest_rate = to_decimal(interest_rate)
 
-    emi = calculate_emi(principal, ANNUAL_INTEREST_RATE, tenure_months)
+    emi = calculate_emi(principal, interest_rate, tenure_months)
 
     schedule = generate_schedule(
         principal,
-        ANNUAL_INTEREST_RATE,
+        interest_rate,
         tenure_months,
         first_emi_date
     )
@@ -184,39 +167,11 @@ def calculate_loan_summary(
 
     total_interest = total_repayment - principal
 
-    total_gst = sum(row["gst_on_interest"] for row in schedule)
-
-    net_disbursement_amount = (
-        principal - charges["total_processing_charges"]
-    ).quantize(Decimal("0.01"))
-
-    apr = (
-        (total_interest / principal) *
-        (Decimal("12") / Decimal(tenure_months)) *
-        Decimal("100")
-    ).quantize(Decimal("0.01"))
-
     return {
-        "loan_summary": {
-            "approved_amount": str(principal),
-            "tenure_months": tenure_months,
-            "interest_rate": str(ANNUAL_INTEREST_RATE),
-            "emi": str(emi),
-            "total_repayment": str(total_repayment),
-            "total_interest": str(total_interest),
-            "apr": str(apr)
-        },
-        "charges": {
-            "processing_fee": str(charges["processing_fee"]),
-            "gst_on_processing_fee": str(charges["gst_on_processing_fee"]),
-            "total_processing_charges": str(charges["total_processing_charges"])
-        },
-        "disbursement": {
-            "approved_amount": str(principal),
-            "net_disbursement_amount": str(net_disbursement_amount)
-        },
-        "totals": {
-            "total_gst_on_interest": str(total_gst)
-        },
-        "amortization_schedule": schedule
+        "emi": float(emi),
+        "total_amount": float(total_repayment),
+        "processing_fee": float(charges["processing_fee"]),
+        "gst_amount": float(charges["gst_on_processing_fee"]),
+        "total_interest": float(total_interest),
+        "schedule": schedule
     }

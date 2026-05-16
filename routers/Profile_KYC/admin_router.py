@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Form
 from sqlalchemy.orm import Session
 from typing import Optional, List
 from datetime import datetime, timezone
@@ -8,25 +8,25 @@ from models.Auth.user import User
 from models.Profile_KYC.document_upload import DocumentStatus
 from repositories.Profile_KYC.user_repository import UserRepository
 from repositories.Profile_KYC.document_upload_repository import DocumentUploadRepository
-from schemas.Profile_KYC.document_schema import DocumentReviewRequest, DocumentReviewResponse, UserKYCDetails
-
+from schemas.Profile_KYC.document_schema import DocumentReviewResponse, UserKYCDetails, ReviewAction
 
 router = APIRouter(prefix="/api/admin", tags=["Admin Panel"])
-
 
 # =====================================================
 # REVIEW DOCUMENT
 # =====================================================
 @router.post("/documents/review", response_model=DocumentReviewResponse)
 def review_document(
-    request: DocumentReviewRequest,
+    document_id:   int           = Form(...),
+    action:        ReviewAction  = Form(...),
+    admin_remarks: Optional[str] = Form(None),
     db: Session = Depends(get_db),
     current_admin: User = Depends(require_roles("SUPER_ADMIN")),
 ):
     try:
-        document = DocumentUploadRepository.get_by_id(db, request.document_id)
+        document = DocumentUploadRepository.get_by_id(db, document_id)
         if not document:
-            raise HTTPException(404, f"Document {request.document_id} not found")
+            raise HTTPException(404, f"Document {document_id} not found")
 
         if document.status == DocumentStatus.APPROVED:
             raise HTTPException(400, "Document already approved")
@@ -34,21 +34,16 @@ def review_document(
         if document.status == DocumentStatus.REJECTED:
             raise HTTPException(400, "Document already rejected. User must re-upload.")
 
-        request.action = request.action.upper()
-
-        if request.action not in ["APPROVE", "REJECT"]:
-            raise HTTPException(400, "Invalid action. Must be APPROVE or REJECT")
-
-        if request.action == "REJECT":
-            if not request.admin_remarks or not request.admin_remarks.strip():
+        if action.value == "REJECT":
+            if not admin_remarks or not admin_remarks.strip():
                 raise HTTPException(400, "Admin remarks required for rejection")
             document.status = DocumentStatus.REJECTED
-            message = f"Document rejected: {request.admin_remarks}"
+            message = f"Document rejected: {admin_remarks}"
         else:
             document.status = DocumentStatus.APPROVED
             message = "Document approved successfully"
 
-        document.admin_remarks = request.admin_remarks
+        document.admin_remarks = admin_remarks
         document.reviewed_at   = datetime.now(timezone.utc)
         document.reviewed_by   = current_admin.username
 
@@ -76,13 +71,12 @@ def review_document(
                 profile.document_status = "APPROVED"
 
                 if (
-                    profile.pan_status == "VERIFIED" and
-                    profile.aadhaar_status == "VERIFIED" and
-                    profile.bank_status == "VERIFIED"
+                    profile.pan_status      == "VERIFIED" and
+                    profile.aadhaar_status  == "VERIFIED" and
+                    profile.bank_status     == "VERIFIED"
                 ):
                     profile.kyc_status = "COMPLETED"
                     kyc_completed = True
-
             else:
                 profile.document_status = "UPLOADED"
 
@@ -111,23 +105,20 @@ def review_document(
 # DOCUMENT STATS
 # =====================================================
 @router.get("/stats/documents")
-def get_document_stats(
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(require_roles("SUPER_ADMIN")),
-):
-    total_docs = DocumentUploadRepository.count_all(db)
-    uploaded   = DocumentUploadRepository.count_by_status(db, DocumentStatus.UPLOADED)
-    verified   = DocumentUploadRepository.count_by_status(db, DocumentStatus.VERIFIED)
-    approved   = DocumentUploadRepository.count_by_status(db, DocumentStatus.APPROVED)
-    rejected   = DocumentUploadRepository.count_by_status(db, DocumentStatus.REJECTED)
+def get_document_stats( db: Session = Depends(get_db), current_admin: User = Depends(require_roles("SUPER_ADMIN"))):
+    total_docs   = DocumentUploadRepository.count_all(db)
+    uploaded     = DocumentUploadRepository.count_by_status(db, DocumentStatus.UPLOADED)
+    under_review = DocumentUploadRepository.count_by_status(db, DocumentStatus.UNDER_REVIEW)
+    approved     = DocumentUploadRepository.count_by_status(db, DocumentStatus.APPROVED)
+    rejected     = DocumentUploadRepository.count_by_status(db, DocumentStatus.REJECTED)
 
     return {
         "total_documents": total_docs,
         "uploaded":        uploaded,
-        "verified":        verified,
+        "under_review":    under_review,
         "approved":        approved,
         "rejected":        rejected,
-        "pending_review":  uploaded + verified,
+        "pending_review":  uploaded + under_review,
     }
 
 
@@ -135,10 +126,7 @@ def get_document_stats(
 # KYC STATS
 # =====================================================
 @router.get("/stats/kyc")
-def get_kyc_stats(
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(require_roles("SUPER_ADMIN")),
-):
+def get_kyc_stats( db: Session = Depends(get_db), current_admin: User = Depends(require_roles("SUPER_ADMIN"))):
     total_users = UserRepository.count_all_users(db)
     completed   = UserRepository.count_by_kyc_status(db, "COMPLETED")
     incomplete  = UserRepository.count_by_kyc_status(db, "INCOMPLETE")
@@ -178,11 +166,7 @@ def get_all_users(
 # GET SINGLE USER DETAILS
 # =====================================================
 @router.get("/users/{user_id}")
-def get_user_details(
-    user_id: int,
-    db: Session = Depends(get_db),
-    current_admin: User = Depends(require_roles("SUPER_ADMIN")),
-):
+def get_user_details( user_id: int, db: Session = Depends(get_db), current_admin: User = Depends(require_roles("SUPER_ADMIN"))):
     user = UserRepository.get_by_user_id(db, user_id)
     if not user:
         raise HTTPException(404, f"User {user_id} not found")
@@ -190,7 +174,7 @@ def get_user_details(
     documents = DocumentUploadRepository.get_by_user_id(db, user_id)
 
     return {
-        "user": user,
-        "documents": documents,
+        "user":            user,
+        "documents":       documents,
         "total_documents": len(documents),
     }

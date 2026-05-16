@@ -1,8 +1,14 @@
 from pydantic import BaseModel, Field
 from typing import Optional, List
-from  core.enums import LoanApplicationStep
-from  services.Loan_application.loan_calculator import MIN_LOAN_AMOUNT, MAX_LOAN_AMOUNT
+from decimal import Decimal
 
+from core.enums import LoanApplicationStep
+from core.Loan_calculator import MIN_LOAN_AMOUNT, MAX_LOAN_AMOUNT
+
+
+# =====================================================
+# USER
+# =====================================================
 class UserSummarySchema(BaseModel):
     user_id: Optional[int] = None
     full_name: str
@@ -13,39 +19,32 @@ class UserSummarySchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# ELIGIBILITY
+# =====================================================
 class EligibilitySummarySchema(BaseModel):
     eligible: bool
-    max_loan_amount: float
-    approved_interest_rate: float
-    risk_category: Optional[str] = None
+    max_loan_amount: Decimal
+    approved_interest_rate: Decimal
 
     class Config:
         from_attributes = True
 
 
+# =====================================================
+# LOAN DETAILS
+# =====================================================
 class LoanDetailsSummarySchema(BaseModel):
 
-    # Loan Basics
-    approved_amount: float
+    approved_amount: Decimal
     requested_tenure_months: int
-    interest_rate: Optional[float] = None
-
-    #  EMI
-    emi_amount: Optional[float] = None
-    total_repayment: Optional[float] = None
-
-    # Processing Charges
-    processing_fee: Optional[float] = None
-    gst_on_processing_fee: Optional[float] = None
-    total_processing_charges: Optional[float] = None
-
-    #  Lender Details
-    lender_name: Optional[str] = None
-
     class Config:
         from_attributes = True
 
 
+# =====================================================
+# PURPOSE
+# =====================================================
 class LoanPurposeSummarySchema(BaseModel):
     purpose: str
 
@@ -53,6 +52,9 @@ class LoanPurposeSummarySchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# REFERENCES
+# =====================================================
 class ReferenceSummarySchema(BaseModel):
     name: str
     relationship: str
@@ -73,16 +75,22 @@ class ReferencesStatusSchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# DECLARATION (FIXED)
+# =====================================================
 class DeclarationSummarySchema(BaseModel):
-    has_existing_loans: bool
-    has_credit_card: bool
-    has_default_history: bool
-    declaration_accepted: bool
+    has_existing_loans: Optional[bool] = None
+    has_credit_card: Optional[bool] = None
+    has_default_history: Optional[bool] = None
+    declaration_accepted: Optional[bool] = None
 
     class Config:
         from_attributes = True
 
 
+# =====================================================
+# SUBMISSION
+# =====================================================
 class SubmissionStatusSchema(BaseModel):
     last_completed_step: Optional[LoanApplicationStep] = None
     can_submit: bool
@@ -92,6 +100,9 @@ class SubmissionStatusSchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# FINAL RESPONSE
+# =====================================================
 class LoanApplicationSummaryResponseSchema(BaseModel):
     application_id: int
     user: UserSummarySchema
@@ -107,13 +118,17 @@ class LoanApplicationSummaryResponseSchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# EDIT LOAN DETAILS
+# =====================================================
 class EditLoanDetailsSchema(BaseModel):
-    approved_amount: Optional[float] = Field(
+    approved_amount: Optional[Decimal] = Field(
         None,
-        ge=MIN_LOAN_AMOUNT,   # ← from loan_calculator.py
-        le=MAX_LOAN_AMOUNT,   # ← from loan_calculator.py
+        ge=MIN_LOAN_AMOUNT,
+        le=MAX_LOAN_AMOUNT,
         description=f"Loan amount between ₹{MIN_LOAN_AMOUNT} and ₹{MAX_LOAN_AMOUNT}"
     )
+
     requested_tenure_months: Optional[int] = Field(
         None,
         description="Tenure: 3, 6, 9, or 12 months"
@@ -123,22 +138,24 @@ class EditLoanDetailsSchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# EDIT PURPOSE
+# =====================================================
 class EditLoanPurposeSchema(BaseModel):
-    purpose_code: str = Field(
-        ...,
-        description="Updated loan purpose code")
-    purpose_description: Optional[str] = Field(
-        None,
-        description="Optional description for the purpose")
+    purpose_code: str = Field(...)
+    purpose_description: Optional[str] = None
 
     class Config:
         from_attributes = True
 
 
+# =====================================================
+# EDIT REFERENCES
+# =====================================================
 class EditSingleReferenceSchema(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
     mobile_number: str = Field(..., min_length=10, max_length=10)
-    relation_type: str = Field(...)
+    relation_type: str
     is_emergency_contact: Optional[bool] = False
 
     class Config:
@@ -149,13 +166,16 @@ class EditReferenceSchema(BaseModel):
     references: List[EditSingleReferenceSchema] = Field(
         ...,
         min_length=2,
-        max_length=2,
-        description="Exactly 2 references required")
+        max_length=2
+    )
 
     class Config:
         from_attributes = True
 
 
+# =====================================================
+# EDIT DECLARATION
+# =====================================================
 class EditDeclarationSchema(BaseModel):
     agreed_terms: bool
     consent_credit_check: bool
@@ -170,6 +190,9 @@ class EditDeclarationSchema(BaseModel):
         from_attributes = True
 
 
+# =====================================================
+# EDIT RESPONSE
+# =====================================================
 class EditFieldResponseSchema(BaseModel):
     success: bool
     message: str

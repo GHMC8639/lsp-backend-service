@@ -11,21 +11,9 @@ router = APIRouter(prefix="/kyc",tags=["User Profile"])
 # =====================================================
 # CREATE PROFILE (USER ONLY)
 # =====================================================
-@router.post(
-    "/profile",
-    response_model=UserRegistrationResponse,
-    status_code=201
-)
-def create_user_profile(
-    request: UserRegistrationRequest,
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("USER"))
-):
-    result = RegistrationService.create_profile(
-        db,
-        current_user.id,
-        request
-    )
+@router.post( "/profile", response_model=UserRegistrationResponse, status_code=201)
+def create_user_profile( request: UserRegistrationRequest, db: Session = Depends(get_db), current_user: User = Depends(require_roles("USER"))):
+    result = RegistrationService.create_profile( db, current_user.id, request)
 
     return {
         "user_id": result.user_id,
@@ -43,22 +31,17 @@ def create_user_profile(
 # GET PROFILE (USER ONLY)
 # =====================================================
 @router.get("/profile")
-def get_user_profile(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(require_roles("USER"))
-):
+def get_user_profile( db: Session = Depends(get_db), current_user: User = Depends(require_roles("USER"))):
     try:
-        profile = RegistrationService.get_profile(
-            db,
-            current_user.id
-        )
+        profile = RegistrationService.get_profile( db, current_user.id)
 
         return {
             "user_id": profile.user_id,
             "email": profile.email,
             "full_name": profile.full_name,
             "dob": profile.dob.isoformat(),
-            "address": profile.address,
+            "permanent_address": profile.permanent_address,
+            "temporary_address": profile.temporary_address,
             "employment_type": profile.employment_type,
             "monthly_income": float(profile.monthly_income),
             "aadhaar_number": profile.aadhaar_number,
@@ -73,12 +56,7 @@ def get_user_profile(
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to fetch user profile"
-        )
-
-
+        raise HTTPException( status_code=500, detail="Failed to fetch user profile")
 
 # =====================================================
 # UPDATE PROFILE (USER ONLY)
@@ -90,17 +68,10 @@ def update_user_profile(
     current_user: User = Depends(require_roles("USER"))
 ):
     try:
-        result = RegistrationService.update_profile(
-            db,
-            current_user.id,
-            request
-        )
+        result = RegistrationService.update_profile( db, current_user.id, request)
         return result
 
     except HTTPException:
         raise
     except Exception as e:
-        raise HTTPException(
-            status_code=500,
-            detail="Failed to update profile"
-        )
+        raise HTTPException( status_code=500, detail="Failed to update profile")

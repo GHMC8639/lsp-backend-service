@@ -35,7 +35,7 @@ class TenureSchedule(BaseModel):
 class EligibilityResultResponseExtended(BaseModel):
     status:  str
     message: str
-    maxEligibleAmount:       float
+    maxEligibleAmount:       Optional[float] = None
     
     
 

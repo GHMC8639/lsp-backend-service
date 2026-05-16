@@ -21,11 +21,11 @@ class PreDisbursementResponseSchema(BaseModel):
 
     processing_fee: Decimal
 
-    gst_on_processing_fee: Decimal
+    gst_amount: float
 
     total_processing_charges: Decimal
 
-    net_disbursement_amount: Decimal
+    disbursed_amount: Decimal
 
     class Config:
         from_attributes = True

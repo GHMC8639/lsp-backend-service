@@ -16,15 +16,15 @@ class PDFGenerator:
         self.output_dir: Path = Path(settings.AGREEMENT_STORAGE_PATH)
         self.output_dir.mkdir(parents=True, exist_ok=True)
 
-    def generate_agreement(self, loan_id: int, borrower_name: str,
+    def generate_agreement(self, application_id: int, borrower_name: str,
                            loan_amount: float, interest_rate: float = 12.5):
 
         # Create loan-specific folder
-        loan_dir = self.output_dir / str(loan_id)
+        loan_dir = self.output_dir / str(application_id)
         loan_dir.mkdir(exist_ok=True)
 
         timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        file_name = f"agreement_v{timestamp}_{loan_id}.pdf"
+        file_name = f"agreement_v{timestamp}_{application_id}.pdf"
         file_path = loan_dir / file_name
 
         logger.info(f"Generating agreement PDF: {file_path}")
@@ -47,7 +47,7 @@ class PDFGenerator:
 
         c.setFont("Helvetica", 12)
         c.drawString(50, height - 145, f"Borrower Name: {borrower_name}")
-        c.drawString(50, height - 165, f"Loan ID: {loan_id}")
+        c.drawString(50, height - 165, f"Application ID: {application_id}")
         c.drawString(50, height - 185, f"Loan Amount: ₹ {loan_amount}")
         c.drawString(50, height - 205, f"Interest Rate: {interest_rate}% per year")
 

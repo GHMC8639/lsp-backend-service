@@ -28,7 +28,7 @@ def admin_required(
     return current_user
 
 
-def user_required(
+def require_roles(
     current_user=Depends(get_current_user)
 ):
     if current_user.role not in (

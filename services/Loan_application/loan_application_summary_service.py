@@ -1,13 +1,54 @@
-from fastapi import HTTPException, status
+from fastapi import HTTPException
 from sqlalchemy.orm import Session
+from datetime import date
+from decimal import Decimal
 
 from models.Loan_application.loan_application import LoanApplication
 from models.Loan_application.loan_application_steps import LoanApplicationStepTracker
+from models.Profile_KYC.user_profile import UserProfile
 from models.Auth.user import User
+from models.Auth.lender import Lender
+from models.Loan_application.loan_application_declaration import LoanApplicationDeclaration
+
+from core.Loan_calculator import calculate_loan_summary
+
+from schemas.Loan_application.loan_application_summary import (
+    UserSummarySchema,
+    LoanDetailsSummarySchema,
+    LoanPurposeSummarySchema,
+    ReferenceSummarySchema,
+    ReferencesStatusSchema,
+    DeclarationSummarySchema,
+    SubmissionStatusSchema,
+    LoanApplicationSummaryResponseSchema,
+)
 
 from core.enums import LoanApplicationStep, enum_value
-from services.Loan_application.loan_calculator import calculate_loan_summary
-from schemas.Loan_application.loan_application_summary import *
+
+
+# =====================================================
+# HELPER
+# =====================================================
+def get_or_create_tracker(db: Session, application: LoanApplication):
+    tracker = db.query(LoanApplicationStepTracker).filter(
+        LoanApplicationStepTracker.application_id == application.id
+    ).first()
+
+    if not tracker:
+        tracker = LoanApplicationStepTracker(
+            application_id=application.id,
+            loan_details_completed=False,
+            purpose_completed=False,
+            references_completed=False,
+            declaration_completed=False,
+            current_step=enum_value(LoanApplicationStep.LOAN_DETAILS),
+            last_completed_step=None
+        )
+        db.add(tracker)
+        db.commit()
+        db.refresh(tracker)
+
+    return tracker
 
 
 class LoanApplicationSummaryService:
@@ -15,115 +56,126 @@ class LoanApplicationSummaryService:
     @staticmethod
     def get_summary_by_user(db: Session, user_id: int):
 
-        # 1️⃣ Get latest draft (NOT submitted)
-        application = db.query(LoanApplication).filter(
-            LoanApplication.user_profile_id == user_id,
-            LoanApplication.is_submitted == False
-        ).order_by(LoanApplication.id.desc()).first()
-
-        if not application:
-            raise HTTPException(
-                status_code=404,
-                detail="No active draft application found"
-            )
-
-        if not application.approved_amount:
-            raise HTTPException(
-                status_code=400,
-                detail="Eligible amount not available"
-            )
-
-        # 2️⃣ Get user profile
-        profile = db.query(User).filter(
-            User.id == application.user_profile_id
+        # ================= USER PROFILE =================
+        profile = db.query(UserProfile).filter(
+            UserProfile.user_id == user_id
         ).first()
 
         if not profile:
-            raise HTTPException(
-                status_code=404,
-                detail="User profile not found"
-            )
+            raise HTTPException(404, "User profile not found")
 
-        # 3️⃣ Step tracker validation
-        tracker = db.query(LoanApplicationStepTracker).filter(
-            LoanApplicationStepTracker.application_id == application.id
-        ).first()
+        # ================= APPLICATION =================
+        application = db.query(LoanApplication).filter(
+            LoanApplication.user_profile_id == profile.user_id
+        ).order_by(LoanApplication.id.desc()).first()
 
-        if not tracker:
-            raise HTTPException(
-                status_code=400,
-                detail="Application steps not initialized"
-            )
+        if not application:
+            raise HTTPException(404, "No application found")
 
-        # 4️⃣ Mandatory step validation
+        tracker = get_or_create_tracker(db, application)
+
+        # ================= STEP VALIDATION =================
         if not tracker.loan_details_completed:
-            raise HTTPException(
-                status_code=400,
-                detail={"pending_step": "LOAN_DETAILS"}
-            )
+            raise HTTPException(400, {"pending_step": "LOAN_DETAILS"})
 
         if not tracker.purpose_completed:
-            raise HTTPException(
-                status_code=400,
-                detail={"pending_step": "PURPOSE"}
-            )
+            raise HTTPException(400, {"pending_step": "PURPOSE"})
 
         if not tracker.references_completed:
-            raise HTTPException(
-                status_code=400,
-                detail={"pending_step": "REFERENCES"}
-            )
+            raise HTTPException(400, {"pending_step": "REFERENCES"})
 
         if not tracker.declaration_completed:
-            raise HTTPException(
-                status_code=400,
-                detail={"pending_step": "DECLARATION"}
-            )
+            raise HTTPException(400, {"pending_step": "DECLARATION"})
 
-        # 5️⃣ Loan calculation
+        # ================= LOAN INPUT VALIDATION =================
+        if not application.requested_tenure_months:
+            raise HTTPException(400, "Tenure not selected")
+
+        if not application.lender_id:
+            raise HTTPException(400, "Lender not selected")
+
+        # ================= LENDER =================
+        lender = db.query(Lender).filter(
+            Lender.id == application.lender_id
+        ).first()
+
+        if not lender:
+            raise HTTPException(404, "Lender not found")
+
+        interest_rate = lender.interest_rate
+
+        # ================= USER =================
+        user = db.get(User, profile.user_id)
+
+        if not user:
+            raise HTTPException(404, "User not found")
+
+        # ================= ELIGIBILITY (FIXED AS PER SCHEMA) =================
+        if application.eligibility and application.eligibility.max_eligible_amount:
+            eligibility = {
+                "eligible": True,
+                "max_loan_amount": application.eligibility.max_eligible_amount,
+                "approved_interest_rate": interest_rate
+            }
+            max_eligible_amount = application.eligibility.max_eligible_amount
+        else:
+            eligibility = {
+                "eligible": False,
+                "max_loan_amount": 0,
+                "approved_interest_rate": interest_rate
+            }
+            max_eligible_amount = 0
+
+        # ================= AMOUNT =================
+        approved_amount = (
+            application.approved_amount
+            if application.approved_amount
+            else max_eligible_amount
+        )
+
+        if not approved_amount:
+            raise HTTPException(400, "Eligible amount not available")
+
+        # ================= CALCULATION =================
         loan_calc = calculate_loan_summary(
-            principal=float(application.approved_amount),
-            tenure_months=application.requested_tenure_months
+            principal=Decimal(approved_amount),
+            interest_rate=Decimal(interest_rate),
+            tenure_months=application.requested_tenure_months,
+            first_emi_date=date.today()
         )
 
-        # 6️⃣ User summary
+        # ================= USER SUMMARY =================
         user_summary = UserSummarySchema(
-            user_id=profile.id,
-            full_name=profile.full_name,
-            mobile_number=profile.mobile_number,
-            email=profile.email
+            user_id=user.id,
+            full_name=profile.full_name or "",
+            mobile_number=user.mobile_number,
+            email=profile.email or ""
         )
 
-        # 7️⃣ Loan details
+        # ================= LOAN DETAILS =================
         loan_details = LoanDetailsSummarySchema(
-            approved_amount=application.approved_amount,
+            approved_amount=approved_amount,
             requested_tenure_months=application.requested_tenure_months,
-            interest_rate=loan_calc["interest_rate"],
+            interest_rate=interest_rate,
             emi_amount=loan_calc["emi"],
-            total_repayment=loan_calc["total_repayment"],
+            total_repayment=application.total_repayment,
             processing_fee=loan_calc["processing_fee"],
-            gst_on_processing_fee=loan_calc["gst_on_processing_fee"],
-            total_processing_charges=loan_calc["total_processing_charges"],
-            lender_name=None
+            gst_on_processing_fee=application.gst_amount,
+            total_processing_charges=application.processing_fee + application.gst_amount,
+            lender_name=lender.company_name
         )
 
-        # 8️⃣ Purpose
+        # ================= PURPOSE =================
         if not application.purpose:
-            raise HTTPException(
-                status_code=400,
-                detail={"pending_step": "PURPOSE"}
-            )
+            raise HTTPException(400, {"pending_step": "PURPOSE"})
 
         purpose = LoanPurposeSummarySchema(
             purpose=application.purpose.purpose_code
         )
 
-        # 9️⃣ References
+        # ================= REFERENCES =================
         if not application.references or len(application.references) < 2:
-            raise HTTPException(
-                status_code=400,
-                detail={"pending_step": "REFERENCES"}
-            )
+            raise HTTPException(400, {"pending_step": "REFERENCES"})
 
         reference_list = [
             ReferenceSummarySchema(
@@ -144,24 +196,52 @@ class LoanApplicationSummaryService:
             remaining_to_verify=max(0, 2 - verified_count)
         )
 
-        # 🔟 Declaration (stored directly in application)
+        # ================= DECLARATION =================
+        declaration_data = db.query(LoanApplicationDeclaration).filter(
+            LoanApplicationDeclaration.application_id == application.id
+        ).first()
+
+        if not declaration_data or not declaration_data.agreed_terms:
+            raise HTTPException(
+                status_code=400,
+                detail={"error": "DECLARATION_NOT_ACCEPTED"}
+            )
+
         declaration = DeclarationSummarySchema(
-            # has_existing_loans=application.has_existing_loans,
-            # has_credit_card=application.has_credit_card,
-            # has_default_history=application.has_default_history,
-            # declaration_accepted=application.agreed_terms
+            agreed_terms=declaration_data.agreed_terms,
+            consent_credit_check=declaration_data.consent_credit_check,
+            consent_timestamp=declaration_data.consent_timestamp,
+            has_existing_loans=declaration_data.has_existing_loans,
+            has_credit_card=declaration_data.has_credit_card,
+            has_default_history=declaration_data.has_default_history,
+            declaration_accepted=declaration_data.agreed_terms
         )
 
-        # 1️⃣1️⃣ Submission status
+        # ================= SUBMISSION STATUS =================
+        can_submit = declaration_data.agreed_terms
+
         submission_status = SubmissionStatusSchema(
             last_completed_step=tracker.last_completed_step,
-            can_submit=True,
-            pending_steps=[]
+            can_submit=can_submit,
+            pending_steps=[] if can_submit else ["DECLARATION"]
         )
 
+        # ================= STEP TRANSITION =================
+        tracker.current_step = enum_value(LoanApplicationStep.SUMMARY)
+        tracker.last_completed_step = enum_value(LoanApplicationStep.DECLARATION)
+        application.current_step = enum_value(LoanApplicationStep.SUMMARY)
+
+        db.add(tracker)
+        db.add(application)
+        db.flush()
+        db.commit()
+        db.refresh(tracker)
+
+        # ================= RESPONSE =================
         return LoanApplicationSummaryResponseSchema(
             application_id=application.id,
             user=user_summary,
+            eligibility=eligibility,   # ✅ FIXED
             loan_details=loan_details,
             purpose=purpose,
             references=reference_list,

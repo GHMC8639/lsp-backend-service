@@ -14,15 +14,15 @@ class DocumentUploadRepository:
         return db.query(DocumentUpload).filter(DocumentUpload.user_id == user_id).all()
 
     @staticmethod
-    def get_by_user_and_type(db: Session, user_id: int, document_type: DocumentType) -> Optional[DocumentUpload]:
-        return db.query(DocumentUpload).filter(
-            DocumentUpload.user_id == user_id,
-            DocumentUpload.document_type == document_type
-        ).first()
-
-    @staticmethod
     def get_by_email(db: Session, email: str) -> List[DocumentUpload]:
         return db.query(DocumentUpload).filter(DocumentUpload.email == email).all()
+
+    @staticmethod
+    def get_by_user_and_type(db: Session, user_id: int, document_type: DocumentType) -> Optional[DocumentUpload]:
+        return (
+            db.query(DocumentUpload)
+            .filter( DocumentUpload.user_id == user_id,DocumentUpload.document_type == document_type,).first()
+        )
 
     @staticmethod
     def create_document(db: Session, document: DocumentUpload) -> DocumentUpload:
@@ -49,25 +49,22 @@ class DocumentUploadRepository:
     @staticmethod
     def count_by_status(db: Session, status: DocumentStatus) -> int:
         return db.query(DocumentUpload).filter(DocumentUpload.status == status).count()
-    
+
     @staticmethod
     def get_pending_documents(db: Session) -> List[DocumentUpload]:
         return (
-            db.query(DocumentUpload)
-            .filter(DocumentUpload.status == DocumentStatus.UPLOADED)
-            .all()
-        )
-        
+            db.query(DocumentUpload).filter(DocumentUpload.status == DocumentStatus.UPLOADED).all())
+
     @staticmethod
     def get_rejected_documents_before_date(db: Session, cutoff_date: datetime) -> List[DocumentUpload]:
-        return db.query(DocumentUpload).filter(
-            DocumentUpload.status == DocumentStatus.REJECTED,
-            DocumentUpload.reviewed_at < cutoff_date
-        ).all()
+        return (
+            db.query(DocumentUpload)
+            .filter(DocumentUpload.status == DocumentStatus.REJECTED, DocumentUpload.reviewed_at <  cutoff_date,).all()
+        )
 
     @staticmethod
     def get_by_user_and_status(db: Session, user_id: int, status: DocumentStatus) -> List[DocumentUpload]:
-        return db.query(DocumentUpload).filter(
-            DocumentUpload.user_id == user_id,
-            DocumentUpload.status == status
-        ).all()
+        return (
+            db.query(DocumentUpload)
+            .filter( DocumentUpload.user_id == user_id, DocumentUpload.status  == status,).all()
+        )

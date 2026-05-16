@@ -1,20 +1,21 @@
 from pydantic import BaseModel
+from typing import Optional
 
 
 class SettingsResponse(BaseModel):
-    push_notification: bool
-    sms_notification: bool
-    email_notification: bool
+    push_notification: Optional[bool] = None
+    sms_notification: Optional[bool] = None
+    email_notification: Optional[bool] = None
 
-    application_updates: bool
-    payment_reminders: bool
-    promotional_offers: bool
-    product_updates: bool
+    application_updates: Optional[bool] = None
+    payment_reminders: Optional[bool] = None
+    promotional_offers: Optional[bool] = None
+    product_updates: Optional[bool] = None
 
-    biometric_enabled: bool
-    pin_enabled: bool
+    biometric_enabled: Optional[bool] = None
+    pin_enabled: Optional[bool] = None
 
-    language: str
+    language: Optional[str] = None
 
     class Config:
         from_attributes = True

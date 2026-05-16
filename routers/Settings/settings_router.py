@@ -1,90 +1,79 @@
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.orm import Session
 
 from core.database import get_db
-from core.permissions import user_required
+from core.dependencies import get_current_user
 
 from models.Auth.user import User
-from models.Settings.user_settings import UserSettings
-from schemas.Settings.common_response import CommonResponse
-from schemas.Settings.settings_schema import SettingsUpdate
-from schemas.Settings.settings_response_schema import SettingsResponse
-from services.Settings.settings_service import (
-    get_user_settings,
-    update_user_settings
-)
+
+
+# ✅ IMPORTANT: this must be named "router"
 router = APIRouter(
-    prefix="/user/settings",
+    prefix="/settings",
     tags=["Settings"]
 )
 
 
-@router.get("/", response_model=SettingsResponse)
+# ===============================
+# BASIC SETTINGS API (TEST)
+# ===============================
+@router.get("/")
 def get_settings(
-    db: Session = Depends(get_db),
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(get_current_user)
 ):
-    settings = db.query(UserSettings).filter(
-        UserSettings.user_id == current_user.id
-    ).first()
-
-    if not settings:
-        settings = UserSettings(user_id=current_user.id)
-        db.add(settings)
-        db.commit()
-        db.refresh(settings)
-
-    return settings
+    return {
+        "message": "Settings API working",
+        "user_id": current_user.id
+    }
 
 
-@router.put("/")
-def update_settings(
-    data: SettingsUpdate,
+# ===============================
+# CHANGE USER STATUS (EXAMPLE)
+# ===============================
+@router.put("/deactivate")
+def deactivate_user(
     db: Session = Depends(get_db),
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(get_current_user)
 ):
-    settings = db.query(UserSettings).filter(
-        UserSettings.user_id == current_user.id
-    ).first()
-
-    if not settings:
-        settings = UserSettings(user_id=current_user.id)
-        db.add(settings)
-
-    update_data = data.dict(exclude_unset=True)
-
-    for key, value in update_data.items():
-        setattr(settings, key, value)
+    current_user.status = "inactive"
 
     db.commit()
-    db.refresh(settings)
+    db.refresh(current_user)
 
-    return {"message": "Settings updated successfully"}
-@router.get("/", response_model=CommonResponse)
-def get_settings(db: Session = Depends(get_db), current_user: User = Depends(user_required)):
-    settings = get_user_settings(db, current_user.id)
-
-    return CommonResponse(
-        success=True,
-        message="Settings fetched successfully",
-        data=settings
-    )
+    return {
+        "message": "User deactivated successfully"
+    }
 
 
-@router.put("/", response_model=CommonResponse)
-def update_settings(
-    data: SettingsUpdate,
+# ===============================
+# ACTIVATE USER (EXAMPLE)
+# ===============================
+@router.put("/activate")
+def activate_user(
     db: Session = Depends(get_db),
-    current_user: User = Depends(user_required)
+    current_user: User = Depends(get_current_user)
 ):
-    settings = update_user_settings(
-        db,
-        current_user.id,
-        data.dict(exclude_unset=True)
-    )
+    current_user.status = "active"
 
-    return CommonResponse(
-        success=True,
-        message="Settings updated successfully",
-        data=settings
-    )
+    db.commit()
+    db.refresh(current_user)
+
+    return {
+        "message": "User activated successfully"
+    }
+
+
+# ===============================
+# DELETE ACCOUNT (SIMPLE)
+# ===============================
+@router.delete("/delete-account")
+def delete_account(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    db.delete(current_user)
+    db.commit()
+
+    return {
+        "message": "Account deleted successfully"
+    }
